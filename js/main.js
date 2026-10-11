@@ -1,10 +1,14 @@
-// 画面全体のまとめ役。ステップの切り替え、コードの実行、結果の表示、記録をつなぐ。
+// 画面全体のまとめ役。ステップの切り替え、コードの編集と実行、結果の表示、記録をつなぐ。
 import { APP_VERSION } from './version.js';
 import { LESSONS } from './lessons.js';
+import { FIGURES } from './figures.js';
 import { PyRunner } from './runner.js';
 import { Logger } from './log.js';
 import { PlotView } from './views/plot.js';
 import { MapGallery } from './views/heatmap.js';
+import { BlockEditor } from './blocks/view.js';
+import { parseBlocks } from './blocks/model.js';
+import { findSliderDefault, logicalLines } from './blocks/pytokens.js';
 import { buildTrail } from './trail.js';
 import { initBench } from './bench.js';
 import { downloadBlob, downloadText, el, fmtMs, round, stamp } from './util.js';
@@ -16,7 +20,9 @@ const store = {
   },
   set(key, value) { try { localStorage.setItem(key, value); } catch { /* 保存できない環境では何もしない */ } },
   remove(key) { try { localStorage.removeItem(key); } catch { /* 同上 */ } },
+  json(key, fallback) { try { return JSON.parse(this.get(key)) ?? fallback; } catch { return fallback; } },
 };
+const CODE_KEY = 'perlinTerrain.code2.';      // 書き換えたコードの保存先（ステップごと）
 
 $('version').textContent = 'v' + APP_VERSION;
 
@@ -31,18 +37,28 @@ let terrainView = null;
 let terrainFailed = false;
 let terrainMode = 'smooth';
 
-const done = new Set(JSON.parse(store.get('perlinTerrain.done', '[]')));
+const done = new Set(store.json('perlinTerrain.done', []));
+const taskChecks = store.json('perlinTerrain.tasks', {});
 const starters = new Map();     // お手本コード（ファイル名 -> 中身）
 let lessonIndex = 0;
-let params = {};                // スライダーの現在値（名前 -> 値）
+let params = {};                // コードに書き戻せなかったスライダーの値（名前 -> { value, default }）
 let sliderSpecs = [];
 let pendingTrigger = null;      // 実行中に次の実行を頼まれたら、ここに覚えておく
 let benchBusy = false;
-let errorLine = null;
+let lastRun = null;             // 直前の実行（コード・結果の特徴）。「結果が変わったか」を伝えるのに使う
+let lastRunAt = 0;
+let lastTrigger = '';
+let editKinds = new Set();      // 前回の実行以降に行った編集の種類（記録用）
 
-// ---------- エディタ ----------
-const editor = (() => {
+// ---------- コードの編集（ブロック表示とテキスト表示） ----------
+let editorMode = store.get('perlinTerrain.editor', 'blocks') === 'text' ? 'text' : 'blocks';
+let silentChange = false;       // プログラムからの書き換えで「編集された」と数えないための印
+
+const blockEd = new BlockEditor($('blockEditor'), { onChange: (kind) => onEdited(kind) });
+
+const textEd = (() => {
   const host = $('editor');
+  let errorLine = null;
   if (window.CodeMirror) {
     const cm = window.CodeMirror(host, {
       mode: 'python', theme: 'terrain', lineNumbers: true,
@@ -56,10 +72,15 @@ const editor = (() => {
       },
     });
     cm.getInputField().setAttribute('aria-label', 'Python のコード');
+    cm.on('change', () => { if (!silentChange) onEdited('text'); });
     return {
       get: () => cm.getValue(),
-      set: (text) => { cm.setValue(text); cm.clearHistory(); },
-      onChange: (fn) => cm.on('change', fn),
+      set(text) { silentChange = true; cm.setValue(text); cm.clearHistory(); silentChange = false; },
+      replace(start, length, text) {
+        silentChange = true;
+        cm.replaceRange(text, cm.posFromIndex(start), cm.posFromIndex(start + length), '+slider');
+        silentChange = false;
+      },
       markError(line) {
         if (errorLine !== null) cm.removeLineClass(errorLine, 'background', 'error-line');
         errorLine = null;
@@ -74,31 +95,120 @@ const editor = (() => {
   // エディタ部品が読み込めなかったときは、ふつうの入力欄を使う
   const ta = el('textarea', { class: 'plain-editor', spellcheck: 'false', 'aria-label': 'Python のコード' });
   host.appendChild(ta);
+  ta.addEventListener('input', () => onEdited('text'));
   ta.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); requestRun('shortcut'); }
   });
   return {
     get: () => ta.value,
     set: (text) => { ta.value = text; },
-    onChange: (fn) => ta.addEventListener('input', fn),
+    replace(start, length, text) { ta.value = ta.value.slice(0, start) + text + ta.value.slice(start + length); },
     markError() {},
     refresh() {},
   };
 })();
 
+function getCode() {
+  return editorMode === 'blocks' ? blockEd.getCode() : textEd.get();
+}
+
+function showEditorNote(text) {
+  $('editorNote').hidden = !text;
+  $('editorNote').textContent = text || '';
+}
+
+function applyEditorMode() {
+  const blocks = editorMode === 'blocks';
+  $('modeBlocksEd').setAttribute('aria-pressed', String(blocks));
+  $('modeTextEd').setAttribute('aria-pressed', String(!blocks));
+  $('blockEditor').hidden = !blocks;
+  $('editor').hidden = blocks;
+  $('undoBtn').hidden = !blocks;
+  $('redoBtn').hidden = !blocks;
+  const lesson = LESSONS[lessonIndex];
+  $('palette').hidden = !blocks || !(lesson.snippets && lesson.snippets.length);
+  if (!blocks) textEd.refresh();
+  updateUndoButtons();
+}
+
+function updateUndoButtons() {
+  $('undoBtn').disabled = !blockEd.canUndo;
+  $('redoBtn').disabled = !blockEd.canRedo;
+}
+
+// コードを両方のエディタに入れる。ブロックにできないコードのときはテキスト表示にする。
+function loadCode(text) {
+  textEd.set(text);
+  showEditorNote('');
+  const wanted = store.get('perlinTerrain.editor', 'blocks') === 'text' ? 'text' : 'blocks';
+  const res = blockEd.load(text);
+  if (wanted === 'blocks' && !res.ok) {
+    editorMode = 'text';
+    showEditorNote(`保存されていたコードは、そのままではブロック表示にできません（${res.line} 行目: ${res.reason}）。テキスト表示で開いています。`);
+  } else {
+    editorMode = wanted;
+  }
+  applyEditorMode();
+}
+
+function switchEditor(mode) {
+  if (mode === editorMode) return;
+  if (mode === 'text') {
+    textEd.set(blockEd.getCode());
+  } else {
+    const res = blockEd.load(textEd.get());
+    if (!res.ok) {
+      showEditorNote(`いまのコードは、ブロック表示にできません（${res.line} 行目: ${res.reason}）。テキストで直すか、「お手本に戻す」を押してください。`);
+      return;
+    }
+  }
+  showEditorNote('');
+  editorMode = mode;
+  store.set('perlinTerrain.editor', mode);
+  applyEditorMode();
+  logger.add('editor_mode', LESSONS[lessonIndex].id, { detail: mode, editor: mode });
+}
+$('modeBlocksEd').addEventListener('click', () => switchEditor('blocks'));
+$('modeTextEd').addEventListener('click', () => switchEditor('text'));
+$('undoBtn').addEventListener('click', () => blockEd.undo());
+$('redoBtn').addEventListener('click', () => blockEd.redo());
+
+$('autoRun').checked = store.get('perlinTerrain.autoRun', '1') !== '0';
+$('autoRun').addEventListener('change', (ev) => store.set('perlinTerrain.autoRun', ev.target.checked ? '1' : '0'));
+
 let saveTimer = 0;
-editor.onChange(() => {
+let autoTimer = 0;
+
+// コードが書き換えられたとき（ブロックの操作、数字の変更、テキストの入力）
+function onEdited(kind) {
+  // 並び替え・追加・削除などは 1 回ずつ記録する。数字の書き換えは、続けて打った分を 1 回にまとめる
+  if (kind !== 'text' && !(editKinds.has(kind) && (kind === 'number' || kind === 'name'))) {
+    logger.add('block_edit', LESSONS[lessonIndex].id, { detail: kind, editor: editorMode });
+  }
+  editKinds.add(kind);
+  updateUndoButtons();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveCode, 400);
-});
+  if (!$('autoRun').checked) {
+    setRunNote('pending', 'コードを書き換えました。「実行する」を押すと結果に反映されます。');
+    return;
+  }
+  clearTimeout(autoTimer);
+  // 文字を打っている途中で何度も実行しないよう、テキストは少し待ってから実行する
+  const delay = kind === 'text' ? 900 : kind === 'number' ? 250 : 60;
+  autoTimer = setTimeout(() => {
+    if (kind === 'text' && !parseBlocks(textEd.get()).ok) return;   // 書きかけ（かっこが開いたまま等）なら待つ
+    requestRun('edit');
+  }, delay);
+}
 
 function saveCode() {
   const lesson = LESSONS[lessonIndex];
   const starter = starters.get(lesson.file);
   if (starter === undefined) return;
-  const code = editor.get();
-  if (code === starter) store.remove('perlinTerrain.code.' + lesson.id);
-  else store.set('perlinTerrain.code.' + lesson.id, code);
+  const code = getCode();
+  if (code === starter) store.remove(CODE_KEY + lesson.id);
+  else store.set(CODE_KEY + lesson.id, code);
 }
 
 async function getStarter(file) {
@@ -110,11 +220,49 @@ async function getStarter(file) {
   return starters.get(file);
 }
 
+// ---------- 使い方の案内 ----------
+$('guide').hidden = store.get('perlinTerrain.guide') === 'closed';
+$('guideClose').addEventListener('click', () => {
+  $('guide').hidden = true;
+  store.set('perlinTerrain.guide', 'closed');
+});
+
 // ---------- ステップの表示 ----------
 const trail = buildTrail($('trail'), LESSONS, (i) => openLesson(i, true));
 
+function renderTasks(lesson) {
+  const checks = taskChecks[lesson.id] || [];
+  $('lessonTasks').replaceChildren(...lesson.tasks.map((task, k) => {
+    const box = el('input', { type: 'checkbox', 'aria-label': 'この課題をやった' });
+    box.checked = !!checks[k];
+    box.addEventListener('change', () => {
+      const list = (taskChecks[lesson.id] ||= []);
+      list[k] = box.checked;
+      store.set('perlinTerrain.tasks', JSON.stringify(taskChecks));
+      logger.add('task_check', lesson.id, { detail: `task${k + 1}=${box.checked ? 1 : 0}` });
+    });
+    return el('li', {}, [
+      el('div', { class: 'task-q' }, [el('span', { html: task.q }), el('label', { class: 'task-done' }, [box, 'やった'])]),
+      el('details', { class: 'task-a' }, [el('summary', { text: '解説を見る' }), el('p', { html: task.a })]),
+    ]);
+  }));
+}
+
+function renderPalette(lesson) {
+  const items = (lesson.snippets || []).map((sn) => {
+    const chip = el('button', { type: 'button', class: 'palette-item', title: sn.code.trim() }, [
+      el('span', { class: 'palette-name', text: sn.label }),
+      el('code', { text: sn.code.trim().split('\n')[0] + (sn.code.trim().includes('\n') ? ' …' : '') }),
+    ]);
+    blockEd.attachPaletteItem(chip, sn.code);
+    return chip;
+  });
+  $('paletteItems').replaceChildren(...items);
+}
+
 async function openLesson(index, byUser = false) {
   clearTimeout(saveTimer);
+  clearTimeout(autoTimer);
   if (starters.has(LESSONS[lessonIndex].file)) saveCode();
   lessonIndex = Math.min(LESSONS.length - 1, Math.max(0, index));
   const lesson = LESSONS[lessonIndex];
@@ -124,37 +272,50 @@ async function openLesson(index, byUser = false) {
   $('lessonStep').textContent = `ステップ ${lessonIndex + 1} / ${LESSONS.length}`;
   $('lessonTitle').textContent = lesson.title;
   $('lessonIntro').replaceChildren(...lesson.intro.map((html) => el('p', { html })));
-  $('lessonTasks').replaceChildren(...lesson.tasks.map((html) => el('li', { html })));
+  const fig = $('lessonFigure');
+  fig.hidden = !lesson.figure;
+  fig.innerHTML = lesson.figure ? FIGURES[lesson.figure]() : '';
   $('lessonTerms').replaceChildren(...lesson.terms.flatMap(([term, text]) => [el('dt', { html: term }), el('dd', { html: text })]));
-  $('lessonTermsBox').hidden = lesson.terms.length === 0;
-  $('prevBtn').disabled = lessonIndex === 0;
-  $('nextBtn').disabled = lessonIndex === LESSONS.length - 1;
+  renderTasks(lesson);
+  renderPalette(lesson);
+
+  const prev = LESSONS[lessonIndex - 1];
+  const next = LESSONS[lessonIndex + 1];
+  $('prevBtn').disabled = !prev;
+  $('nextBtn').disabled = !next;
+  $('prevTitle').textContent = prev ? `${lessonIndex}. ${prev.title}` : '';
+  $('nextTitle').textContent = next ? `${lessonIndex + 2}. ${next.title}` : 'これが最後のステップです';
   trail.update(lessonIndex, done);
   document.title = `${lessonIndex + 1}. ${lesson.title} ― Perlin Terrain`;
 
   params = {};
   sliderSpecs = [];
+  lastRun = null;
+  editKinds = new Set();
   $('sliders').replaceChildren();
   $('sliders').hidden = true;
-  showOutputs([], true);
+  plotView.clearGhost();
+  showOutputs([]);
   showError(null);
   showConsole([]);
   $('runStats').hidden = true;
+  setRunNote('idle', runner.state === 'loading' ? 'Python の準備ができると、ここに結果が表示されます。' : '実行しています…');
   if (lesson.view3d) setTerrainMode(lesson.view3d, false);
+  blockEd.setMeta({ fold: lesson.fold, focus: lesson.focus });
 
   let starter;
   try {
     starter = await getStarter(lesson.file);
   } catch (err) {
     if (LESSONS[lessonIndex] !== lesson) return;
-    editor.set('');
+    loadCode('');
     showError({ type: '読み込みエラー', message: err.message, hint: '通信の状態を確認して、ページを読み込み直してください。', trace: [] });
     return;
   }
   if (LESSONS[lessonIndex] !== lesson) return;    // 読み込み中に別のステップへ移った
-  editor.set(store.get('perlinTerrain.code.' + lesson.id, starter));
-  editor.refresh();
-  logger.add('lesson_open', lesson.id);
+  loadCode(store.get(CODE_KEY + lesson.id, starter));
+  blockEd.scrollToFocus();
+  logger.add('lesson_open', lesson.id, { editor: editorMode });
   if (byUser) window.scrollTo(0, 0);
   requestRun('open');
 }
@@ -171,7 +332,7 @@ function setRunUi() {
     failed: 'Python を起動できませんでした',
   }[state];
   $('runBtn').disabled = state === 'failed' || benchBusy;
-  $('runBtn').textContent = state === 'loading' ? '準備中…' : '実行する';
+  $('runBtn').textContent = state === 'loading' ? '準備中…' : state === 'running' ? '実行中…' : '実行する';
   $('stopBtn').hidden = state !== 'running' || benchBusy;
 }
 runner.addEventListener('status', setRunUi);
@@ -181,11 +342,45 @@ runner.whenReady().catch((err) => {
     type: '起動エラー', message: err.message, trace: [],
     hint: 'この教材は WebAssembly に対応した新しいブラウザ（Chrome、Edge、Firefox、Safari の最新版）で動きます。通信の状態を確認して、ページを読み込み直してください。',
   });
-  $('outEmpty').hidden = true;
+  setRunNote('error', 'Python を起動できなかったため、実行できません。');
 });
+
+// 実行結果の上に出す 1 行の案内
+function setRunNote(kind, text) {
+  const note = $('runNote');
+  note.dataset.kind = kind;
+  note.textContent = text;
+}
+
+function flashOutputs() {
+  const panel = $('outPanel');
+  panel.classList.remove('ran');
+  void panel.offsetWidth;          // アニメーションを最初からやり直すための読み出し
+  panel.classList.add('ran');
+}
+
+// 結果の特徴を 1 つの数にまとめる（前回と同じ結果かどうかを比べるため）
+function signature(res) {
+  let h = 2166136261;
+  const mix = (v) => { h = Math.imul(h ^ v, 16777619) >>> 0; };
+  const mixText = (s) => { for (let i = 0; i < s.length; i++) mix(s.charCodeAt(i)); };
+  for (const o of res.outputs) {
+    mixText(o.kind + (o.label || '') + (o.w || '') + 'x' + (o.h || '') + (o.sea ?? '') + (o.palette || []).join(','));
+    for (const key of ['ys', 'xs', 'data', 'colors']) {
+      const a = o[key];
+      if (!a) continue;
+      const bytes = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+      for (let i = 0; i < bytes.length; i++) mix(bytes[i]);
+    }
+  }
+  mixText(res.stdout.join('\n'));
+  mixText(res.error ? res.error.type + res.error.message + res.error.line : '');
+  return h;
+}
 
 function requestRun(trigger) {
   if (benchBusy) return;
+  clearTimeout(autoTimer);
   if (runner.busy) {
     // スライダーを続けて動かしたときなどは、いちばん新しい依頼だけを残す
     if (pendingTrigger !== 'button' && pendingTrigger !== 'shortcut') pendingTrigger = trigger;
@@ -196,23 +391,56 @@ function requestRun(trigger) {
 
 async function runNow(trigger) {
   const lesson = LESSONS[lessonIndex];
-  const code = editor.get();
+  const code = getCode();
   const starter = starters.get(lesson.file);
+  const edits = [...editKinds].join(' ');
+  editKinds = new Set();
   const res = await runner.run(code, params);
 
   if (LESSONS[lessonIndex] === lesson) {
     const t0 = performance.now();
-    const hadOutputs = res.outputs.length > 0;
-    if (!res.error || hadOutputs) await showOutputs(res.outputs, false);
-    else if (!$('outEmpty').hidden) $('outEmpty').textContent = 'エラーを直してから、もう一度実行してください。';
-    if (res.sliders && (!res.error || res.sliders.length >= sliderSpecs.length)) syncSliders(res.sliders);
+    const sig = signature(res);
+    const sameCode = lastRun && lastRun.code === code && lastRun.params === JSON.stringify(params);
+    const sameResult = lastRun && lastRun.sig === sig;
+    // スライダーを動かし続けている間や、数字を続けて打っている間は「ひとつ前の結果」を入れ替えない。
+    // 操作の種類が変わったとき、または少し間が空いたときに、いま出ている結果を「ひとつ前」として残す。
+    const newBurst = trigger !== lastTrigger || performance.now() - lastRunAt > 1500
+      || trigger === 'button' || trigger === 'shortcut';
+    lastRunAt = performance.now();
+    lastTrigger = trigger;
+
+    let displayError = null;
+    try {
+      if (!res.error || res.outputs.length > 0) await showOutputs(res.outputs, newBurst);
+    } catch (err) {
+      displayError = err;     // 計算はできたが、画面に描く途中で失敗した
+    }
+    if (res.sliders && (!res.error || res.sliders.length >= sliderSpecs.length)) syncSliders(res.sliders, trigger);
     const renderMs = performance.now() - t0;
     showError(res.error);
     showConsole(res.stdout);
     showStats(res, renderMs);
 
+    const time = new Date().toLocaleTimeString('ja-JP');
+    if (displayError) {
+      setRunNote('error', `計算は終わりましたが、結果を画面に表示できませんでした（${displayError.message}）。ページを読み込み直してみてください。`);
+    } else if (res.error) {
+      setRunNote('error', res.aborted ? res.error.message : `エラーで止まりました（${time}）。コードの下の説明を見て直しましょう。`);
+    } else if (!lastRun || trigger === 'open' || trigger === 'reset') {
+      setRunNote('ok', `実行しました（${time}）。数字を書き換えたり、ブロックを動かしたりすると、結果が変わります。`);
+    } else if (!sameResult) {
+      setRunNote('changed', `実行しました（${time}）。結果が変わりました。`);
+    } else if (sameCode) {
+      setRunNote('same', `実行しました（${time}）。コードが前回と同じなので、結果も同じです。数字を書き換えるか、ブロックを動かしてみましょう。`);
+    } else {
+      setRunNote('same', `実行しました（${time}）。コードは変わりましたが、結果は前回と同じでした。`);
+    }
+    if (trigger === 'button' || trigger === 'shortcut' || (!sameResult && trigger !== 'slider' && trigger !== 'open')) flashOutputs();
+    if (!res.aborted) lastRun = { code, params: JSON.stringify(params), sig };
+    $('runNote').dataset.count = String(Number($('runNote').dataset.count || 0) + 1);   // 何回目の実行か
+
     const ok = !res.error;
-    if (ok && (trigger === 'button' || trigger === 'shortcut' || trigger === 'slider') && !done.has(lesson.id)) {
+    if (ok && trigger !== 'open' && trigger !== 'reset' && !done.has(lesson.id)) {
       done.add(lesson.id);
       store.set('perlinTerrain.done', JSON.stringify([...done]));
       trail.update(lessonIndex, done);
@@ -230,7 +458,9 @@ async function runNow(trigger) {
       code_chars: code.length,
       code_edited: starter !== undefined && code !== starter,
       outputs: Object.entries(counts).map(([k, v]) => `${k}:${v}`).join(' '),
-      detail: res.error ? String(res.error.message).slice(0, 200) : '',
+      detail: res.error ? String(res.error.message).slice(0, 200) : edits,
+      editor: editorMode,
+      result_changed: lastRun ? !sameResult : '',
     });
   }
 
@@ -250,23 +480,40 @@ $('stopBtn').addEventListener('click', () => {
 $('resetBtn').addEventListener('click', async () => {
   const lesson = LESSONS[lessonIndex];
   const starter = await getStarter(lesson.file);
-  if (editor.get() !== starter && !confirm('書き換えたコードを消して、お手本に戻します。よろしいですか？')) return;
-  editor.set(starter);
-  store.remove('perlinTerrain.code.' + lesson.id);
+  if (getCode() !== starter && !confirm('書き換えたコードを消して、お手本に戻します。よろしいですか？')) return;
+  store.remove(CODE_KEY + lesson.id);
+  blockEd.setMeta({ fold: lesson.fold, focus: lesson.focus });
+  loadCode(starter);
   params = {};
+  editKinds = new Set();
   logger.add('code_reset', lesson.id);
   requestRun('reset');
 });
 $('prevBtn').addEventListener('click', () => openLesson(lessonIndex - 1, true));
 $('nextBtn').addEventListener('click', () => openLesson(lessonIndex + 1, true));
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey) && !$('tab-learn').hidden && !ev.target.closest?.('.CodeMirror, .plain-editor')) {
+    ev.preventDefault();
+    requestRun('shortcut');
+  }
+});
 
 // ---------- 結果の表示 ----------
 function showError(error) {
   const box = $('errorBox');
-  editor.markError(error?.line ?? null);
+  textEd.markError(error?.line ?? null);
+  blockEd.markError(error?.line ?? null);
   if (!error) { box.hidden = true; box.replaceChildren(); return; }
   const plain = ['Timeout', 'Stopped'].includes(error.type);
-  const parts = [el('p', { class: 'error-title', text: plain ? error.message : `${error.type}: ${error.message}` })];
+  const parts = [];
+  if (plain) {
+    parts.push(el('p', { class: 'error-title', text: error.message }));
+  } else if (error.message_ja) {
+    parts.push(el('p', { class: 'error-title', text: error.message_ja }));
+    parts.push(el('p', { class: 'error-original', text: `Python の表示: ${error.type}: ${error.message}` }));
+  } else {
+    parts.push(el('p', { class: 'error-title', text: `${error.type}: ${error.message}` }));
+  }
   if (error.line) {
     parts.push(el('p', { class: 'error-where' }, [`${error.line} 行目`, error.source ? el('code', { text: error.source }) : null]));
   }
@@ -286,11 +533,11 @@ function showConsole(lines) {
 function showStats(res, renderMs) {
   const p = $('runStats');
   if (res.aborted) { p.hidden = true; return; }
-  p.textContent = `Python の計算 ${fmtMs(res.timings.pythonMs)}、画面への受け渡し ${fmtMs(res.timings.transferMs)}、表示 ${fmtMs(renderMs)}`;
+  p.textContent = `かかった時間: Python の計算 ${fmtMs(res.timings.pythonMs)}、画面への受け渡し ${fmtMs(res.timings.transferMs)}、表示 ${fmtMs(renderMs)}`;
   p.hidden = false;
 }
 
-async function showOutputs(outputs, opening) {
+async function showOutputs(outputs, newBurst = true) {
   const plots = outputs.filter((o) => o.kind === 'plot');
   const maps = outputs.filter((o) => o.kind === 'heatmap');
   const terrain = outputs.filter((o) => o.kind === 'terrain').pop() || null;
@@ -303,16 +550,9 @@ async function showOutputs(outputs, opening) {
   $('plotBlock').hidden = plots.length === 0;
   $('mapBlock').hidden = maps.length === 0;
   $('terrainBlock').hidden = !terrain;
-  const empty = $('outEmpty');
-  empty.hidden = outputs.length > 0;
-  if (!outputs.length) {
-    empty.textContent = opening
-      ? (runner.state === 'ready' || runner.state === 'running' ? '実行しています…' : 'Python の準備ができると、ここに結果が表示されます。')
-      : 'このコードは、グラフや地形を表示していません。plot()、heatmap()、terrain() のどれかを呼ぶと、ここに表示されます。';
-  }
 
   if (plots.length) {
-    plotView.update(plots);
+    plotView.update(plots, { keepGhost: !newBurst });
     const note = $('plotNote');
     note.hidden = !plotView.badValues;
     note.textContent = plotView.badValues ? `数値でない値（nan や inf）が ${plotView.badValues} 個あったので、そこは描いていません。` : '';
@@ -357,6 +597,7 @@ $('modeSmooth').addEventListener('click', () => setTerrainMode('smooth', true));
 $('modeBlocks').addEventListener('click', () => setTerrainMode('blocks', true));
 $('autoRotate').addEventListener('change', (ev) => terrainView?.setAutoRotate(ev.target.checked));
 $('resetView').addEventListener('click', () => terrainView?.resetCamera());
+$('ghostToggle').addEventListener('change', (ev) => plotView.setGhostVisible(ev.target.checked));
 
 const saveName = (kind) => `perlin-terrain-step${lessonIndex + 1}-${kind}-${stamp()}.png`;
 $('plotSave').addEventListener('click', () => plotView.toBlob((b) => b && downloadBlob(b, saveName('graph'))));
@@ -373,23 +614,40 @@ function sliderText(v) {
   return String(Math.round(v * 1e6) / 1e6);
 }
 
-// Python のコードが slider() で宣言した内容に合わせて、画面のスライダーを作り直す
-function syncSliders(specs) {
-  const host = $('sliders');
-  const next = {};
-  for (const s of specs) next[s.name] = s.value;
+// スライダーの値を、コードの slider("名前", 最小, 最大, 値) の「値」に書き戻す。
+// 書き戻せたら true（値が数値そのものではなく式のときなどは false）
+function writeSliderToCode(name, text) {
+  if (editorMode === 'blocks') return blockEd.setSliderDefault(name, text);
+  const src = textEd.get();
+  for (const line of logicalLines(src).lines) {
+    const token = findSliderDefault(line.tokens, name);
+    if (token) {
+      textEd.replace(token.start, token.text.length, text);
+      return true;
+    }
+  }
+  return false;
+}
 
+// Python のコードが slider() で宣言した内容に合わせて、画面のスライダーをそろえる
+function syncSliders(specs, trigger) {
+  const host = $('sliders');
   if (sameSpecs(specs, sliderSpecs)) {
     // 形が同じなら部品は作り直さない（動かしている最中のスライダーを壊さないため）。
-    // 実行中にさらに動かされていることがあるので、値は画面のスライダーを正とする。
-    specs.forEach((s, i) => {
-      const input = host.children[i].querySelector('input');
-      params[s.name] = Number(input.value);
-    });
+    // スライダー操作による実行のときは、画面の値のほうが新しいことがあるので触らない。
+    if (trigger !== 'slider') {
+      specs.forEach((s, i) => {
+        const row = host.children[i];
+        const input = row.querySelector('input');
+        input.value = s.value;
+        row.querySelector('output').textContent = sliderText(s.value);
+      });
+    }
+    sliderSpecs = specs.map((s) => ({ ...s }));
     return;
   }
-  params = next;
   sliderSpecs = specs.map((s) => ({ ...s }));
+  for (const name of Object.keys(params)) if (!specs.some((s) => s.name === name)) delete params[name];
   host.hidden = specs.length === 0;
   host.replaceChildren(...specs.map((s, i) => {
     const id = 'slider' + i;
@@ -398,13 +656,21 @@ function syncSliders(specs) {
     let timer = 0;
     input.addEventListener('input', () => {
       const v = Number(input.value);
-      params[s.name] = v;
-      out.textContent = sliderText(v);
+      const text = sliderText(v);
+      out.textContent = text;
+      if (writeSliderToCode(s.name, text)) {
+        delete params[s.name];
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveCode, 400);
+      } else {
+        const spec = sliderSpecs.find((x) => x.name === s.name) || s;
+        params[s.name] = { value: v, default: spec.default };
+      }
       clearTimeout(timer);
       timer = setTimeout(() => requestRun('slider'), 40);
     });
     input.addEventListener('change', () => {
-      logger.add('slider', LESSONS[lessonIndex].id, { slider_name: s.name, slider_value: Number(input.value) });
+      logger.add('slider', LESSONS[lessonIndex].id, { slider_name: s.name, slider_value: Number(input.value), editor: editorMode });
     });
     return el('div', { class: 'slider-row' }, [el('label', { for: id, text: s.name }), input, out]);
   }));
@@ -415,7 +681,7 @@ function showTab(name) {
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-pressed', String(b.dataset.tab === name));
   for (const id of ['learn', 'bench', 'log']) $('tab-' + id).hidden = id !== name;
   if (name === 'log') renderLog();
-  if (name === 'learn') editor.refresh();
+  if (name === 'learn') textEd.refresh();
   window.scrollTo(0, 0);
 }
 for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => showTab(b.dataset.tab));
@@ -424,13 +690,14 @@ for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', (
 function renderLog() {
   const s = logger.summary();
   $('logCount').textContent = `いま保存されている記録は ${logger.events.length.toLocaleString()} 件（${logger.sessionCount()} 回分の利用）です。`;
-  const head = ['ステップ', '開いた回数', '実行', 'うち手動', 'エラー', 'コード変更後の実行', 'スライダー操作', '作業時間', 'Python 平均'];
+  const head = ['ステップ', '開いた回数', '実行', 'うち手動', 'うち編集で自動', 'エラー', 'ブロック操作', 'スライダー操作', 'やった課題', '作業時間', 'Python 平均'];
   $('logTable').replaceChildren(el('table', { class: 'data' }, [
     el('thead', {}, el('tr', {}, head.map((h) => el('th', { scope: 'col', text: h })))),
     el('tbody', {}, s.map((r) => el('tr', {}, [
       el('th', { scope: 'row', text: `${r.step}. ${r.title}` }),
-      el('td', { text: r.opens }), el('td', { text: r.runs }), el('td', { text: r.userRuns }),
-      el('td', { text: r.errors }), el('td', { text: r.editedRuns }), el('td', { text: r.sliderMoves }),
+      el('td', { text: r.opens }), el('td', { text: r.runs }), el('td', { text: r.userRuns }), el('td', { text: r.editRuns }),
+      el('td', { text: r.errors }), el('td', { text: r.blockEdits }), el('td', { text: r.sliderMoves }),
+      el('td', { text: `${r.tasksDone} / ${r.tasksTotal}` }),
       el('td', { text: r.activeMin + ' 分' }), el('td', { text: r.meanPythonMs === null ? '-' : fmtMs(r.meanPythonMs) }),
     ]))),
   ]));

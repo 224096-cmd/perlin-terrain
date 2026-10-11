@@ -28,6 +28,8 @@ export class PlotView {
   constructor(host) {
     this.host = host;
     this.series = [];
+    this.ghost = null;          // ひとつ前の結果（うすい線で重ねる）
+    this.ghostVisible = true;
     this.hover = null;
     this.caption = el('p', { class: 'plot-caption' });
     this.legend = el('ul', { class: 'plot-legend' });
@@ -44,17 +46,38 @@ export class PlotView {
   }
 
   // series: [{ label, ys: Float32Array, xs: Float32Array|null, dots: boolean }]
-  update(series) {
+  // keepGhost が true なら、いま残している「ひとつ前の結果」をそのまま使う（スライダーを動かしている間など）
+  update(series, { keepGhost = false } = {}) {
+    if (!keepGhost && this.series.length) this.ghost = this.series.filter((s) => !s.dots);
     this.series = series.slice(0, SERIES_COUNT).map((s, k) => ({ ...s, slot: k + 1 }));
     this.hover = null;
     this.tip.hidden = true;
-    this._computeRanges();
+    this._refresh();
+  }
 
+  clearGhost() {
+    this.ghost = null;
+    this.series = [];
+  }
+
+  setGhostVisible(on) {
+    this.ghostVisible = on;
+    if (this.series.length) this._refresh();
+  }
+
+  _ghostSeries() {
+    return this.ghostVisible && this.ghost && this.ghost.length ? this.ghost : [];
+  }
+
+  _refresh() {
+    this._computeRanges();
+    const ghost = this._ghostSeries().length > 0;
     const named = this.series.filter((s) => s.label);
-    this.caption.hidden = !(this.series.length === 1 && named.length === 1);
+    this.caption.hidden = ghost || !(this.series.length === 1 && named.length === 1);
     this.caption.textContent = this.caption.hidden ? '' : named[0].label;
-    this.legend.hidden = this.series.length < 2;
-    this.legend.replaceChildren(...this.series.map((s) => el('li', {}, [
+    this.legend.hidden = this.series.length < 2 && !ghost;
+    const ghostItem = ghost ? [el('li', {}, [el('span', { class: 'swatch ghost' }), 'ひとつ前の結果'])] : [];
+    this.legend.replaceChildren(...ghostItem, ...this.series.map((s) => el('li', {}, [
       el('span', { class: 'swatch' + (s.dots ? ' dot' : ''), style: `--c: var(--series-${s.slot}); --w: ${Math.max(2, Math.round((s.width || 2) * 1.5))}px` }),
       s.label || `線 ${s.slot}`,
     ])));
@@ -66,12 +89,13 @@ export class PlotView {
   _computeRanges() {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     this.badValues = 0;
-    for (const s of this.series) {
+    const current = new Set(this.series);
+    for (const s of [...this.series, ...this._ghostSeries()]) {
       const n = s.ys.length;
       for (let i = 0; i < n; i++) {
         const y = s.ys[i];
         const x = s.xs ? s.xs[i] : i;
-        if (!Number.isFinite(y) || !Number.isFinite(x)) { this.badValues += 1; continue; }
+        if (!Number.isFinite(y) || !Number.isFinite(x)) { if (current.has(s)) this.badValues += 1; continue; }
         if (x < x0) x0 = x;
         if (x > x1) x1 = x;
         if (y < y0) y0 = y;
@@ -149,6 +173,25 @@ export class PlotView {
       g.fillStyle = ink2;
       g.fillText(tickLabel(v), x, L.h - L.bottom + 8);
     }
+
+    // ひとつ前の結果（うすい線）
+    g.strokeStyle = ink2;
+    g.globalAlpha = 0.4;
+    g.lineWidth = 1.5;
+    g.lineJoin = 'round';
+    for (const s of this._ghostSeries()) {
+      g.beginPath();
+      let pen = false;
+      for (let i = 0; i < s.ys.length; i++) {
+        const y = s.ys[i];
+        const x = s.xs ? s.xs[i] : i;
+        if (!Number.isFinite(y) || !Number.isFinite(x)) { pen = false; continue; }
+        if (pen) g.lineTo(sx(x), sy(y));
+        else { g.moveTo(sx(x), sy(y)); pen = true; }
+      }
+      g.stroke();
+    }
+    g.globalAlpha = 1;
 
     // 線と点
     for (const s of this.series) {

@@ -48,9 +48,13 @@ def slider(name, low, high, default=None, step=1):
     if name in _sliders:
         return _sliders[name]["value"]
 
-    value = _params.get(name, default)
-    if not _is_number(value):
-        value = default
+    # 画面のスライダーで動かした値は、ふつうはコードの数字そのものに書き戻される。
+    # 書き戻せなかったとき（最初の値が式のときなど）だけ、ここで上書きする。
+    # コードの「最初の値」が書き換えられていたら、コードのほうを優先する。
+    value = default
+    override = _params.get(name)
+    if isinstance(override, dict) and override.get("default") == default and _is_number(override.get("value")):
+        value = override["value"]
     value = min(max(value, low), high)
     value = low + round((value - low) / step) * step
     value = min(max(value, low), high)
@@ -148,12 +152,17 @@ def heatmap(grid, label="", lo=None, hi=None):
     _emit("heatmap", json.dumps(meta, ensure_ascii=False), buf, None)
 
 
-def terrain(heights, sea=None, colors=None):
+def terrain(heights, blocks=None, sea=None, colors=None):
     """2 次元リストの高さから 3D の地形を描く。高さの単位は「ブロック何個分」。
 
-    sea: 海面の高さ（指定するとその高さまで水が入る）
-    colors: 高さと同じ形の 2 次元リスト。マスごとの色を名前（"grass" など）か "#rrggbb" で指定する。
+    blocks: 高さと同じ形の 2 次元リスト。マスごとに、いちばん上のブロックの種類を
+            名前（"grass" など）か色コード "#rrggbb" で指定する（colors= と書いても同じ）。
+    sea: 海面の高さ（指定すると、その高さまで半透明の水が入る）
     """
+    if blocks is not None and colors is not None:
+        raise TypeError("terrain() には blocks= と colors= のどちらか片方だけを書いてください。")
+    if blocks is not None:
+        colors = blocks
     w, h, buf = _to_grid(heights, "terrain()")
     if sea is not None and not _is_number(sea):
         raise TypeError("terrain() の sea は数値にしてください。")
@@ -165,18 +174,18 @@ def terrain(heights, sea=None, colors=None):
         try:
             rows = len(colors)
         except TypeError:
-            raise TypeError("terrain() の colors には 2 次元のリストを渡してください。") from None
+            raise TypeError("terrain() の blocks には 2 次元のリストを渡してください。") from None
         if rows != h:
-            raise ValueError(f"terrain(): colors の行数（{rows}）が高さの行数（{h}）と違います。")
+            raise ValueError(f"terrain(): blocks の行数（{rows}）が高さの行数（{h}）と違います。")
         for r, row in enumerate(colors):
             if isinstance(row, str) or not hasattr(row, "__len__") or len(row) != w:
-                raise ValueError(f"terrain(): colors の {r + 1} 行目の長さが高さと違います。")
+                raise ValueError(f"terrain(): blocks の {r + 1} 行目の長さが高さと違います。")
             for name in row:
                 k = index.get(name)
                 if k is None:
                     if not isinstance(name, str) or not (name in COLOR_NAMES or _HEX_COLOR.match(name)):
                         raise ValueError(
-                            f"terrain(): 色 {name!r} は使えません。使える名前: "
+                            f"terrain(): ブロックの種類 {name!r} は使えません。使える名前: "
                             + ", ".join(COLOR_NAMES) + '、または "#rrggbb"')
                     if len(palette) >= 255:
                         raise ValueError("terrain(): 色の種類が多すぎます（255 種類まで）。")
@@ -204,6 +213,62 @@ _HINTS = {
 }
 
 
+# Python のエラー文（英語）を日本語に言いかえる。(パターン, 訳) の順に試す。
+_TRANSLATIONS = [
+    (r"^name '(.+?)' is not defined\. Did you mean: '(.+?)'\?",
+     r"「\1」という名前は、まだ作られていません。「\2」のまちがいではありませんか。"),
+    (r"^name '(.+?)' is not defined", r"「\1」という名前は、まだ作られていません。"),
+    (r"^cannot access local variable '(.+)' where it is not associated with a value",
+     r"関数の中で、「\1」に値を入れる前に使っています。"),
+    (r"^invalid syntax\. Perhaps you forgot a comma\?", "書き方が正しくありません。カンマ , が抜けていませんか。"),
+    (r"^invalid syntax\. Maybe you meant '==' or ':=' instead of '='\?",
+     "書き方が正しくありません。「等しいか」を調べるときは = ではなく == と書きます。"),
+    (r"^invalid syntax", "書き方が正しくありません。"),
+    (r"^'(.)' was never closed", r"かっこ \1 が閉じられていません。"),
+    (r"^unmatched '(.)'", r"かっこ \1 に対応する開きかっこがありません。"),
+    (r"^expected ':'", "行の最後にコロン : が必要です。"),
+    (r"^unterminated string literal", "文字列の引用符が閉じられていません。"),
+    (r"^unterminated triple-quoted string literal", "三重引用符の文字列が閉じられていません。"),
+    (r"^unexpected indent", "字下げ（行の先頭の空白）が余分にあります。"),
+    (r"^expected an indented block after '(.+)' statement on line (\d+)",
+     r"\2 行目の \1 の中身として、字下げした行が必要です。"),
+    (r"^expected an indented block after (.+) on line (\d+)", r"\2 行目の中身として、字下げした行が必要です。"),
+    (r"^unindent does not match any outer indentation level", "字下げの幅が、まわりの行とそろっていません。"),
+    (r"^'return' outside function", "return は関数（def）の中でしか使えません。"),
+    (r"^unsupported operand type\(s\) for (.+): '(.+)' and '(.+)'",
+     r"「\1」は、\2 と \3 の組み合わせでは計算できません。"),
+    (r"^can only concatenate (\w+) \(not \"(\w+)\"\) to \w+", r"\1 には \2 をつなげられません。"),
+    (r"^'(.+)' object is not callable", r"\1 型の値を、関数のように ( ) を付けて呼び出しています。"),
+    (r"^'(.+)' object is not subscriptable", r"\1 型の値は、[ ] で中身を取り出せません。"),
+    (r"^'(.+)' object is not iterable", r"\1 型の値は、for で順番に取り出せません。"),
+    (r"^(\w+) indices must be integers or slices, not (\w+)", r"\1 の番号は整数にしてください（\2 が使われています）。"),
+    (r"^(.+)\(\) missing (\d+) required positional arguments?: (.+)", r"関数 \1() に渡す値が \2 個足りません（\3）。"),
+    (r"^(.+)\(\) takes (\d+) positional arguments? but (\d+) (?:was|were) given",
+     r"関数 \1() に渡す値が多すぎます（\2 個のはずが \3 個）。"),
+    (r"^(.+)\(\) got an unexpected keyword argument '([^']+)'\. Did you mean '([^']+)'\?",
+     r"関数 \1() に「\2=」という指定はありません。「\3=」のまちがいではありませんか。"),
+    (r"^(.+)\(\) got an unexpected keyword argument '([^']+)'", r"関数 \1() に「\2=」という指定はありません。"),
+    (r"^list index out of range", "リストの番号が、リストの長さを超えています。"),
+    (r"^(?:float )?division by zero|^division by zero", "0 で割ることはできません。"),
+    (r"^math domain error", "数学の関数に、計算できない値（負の数の平方根など）が渡されました。"),
+    (r"^'(.+)' object has no attribute '(.+)'", r"\1 型の値には「\2」という機能はありません。"),
+    (r"^module '(.+)' has no attribute '(.+)'", r"モジュール \1 には「\2」という機能はありません。"),
+    (r"^No module named '(.+)'", r"「\1」というモジュールは、この教材の Python にはありません。"),
+    (r"^maximum recursion depth exceeded", "関数が自分自身を呼び出し続けて、止まらなくなりました。"),
+    (r"^could not convert string to float: (.+)", r"文字列 \1 は数値に直せません。"),
+    (r"^invalid literal for int\(\) with base 10: (.+)", r"文字列 \1 は整数に直せません。"),
+]
+
+
+def _translate(message):
+    """英語のエラー文を日本語にする。対応する訳がなければ空文字を返す。"""
+    for pattern, ja in _TRANSLATIONS:
+        m = re.search(pattern, message)
+        if m:
+            return m.expand(ja)
+    return ""
+
+
 def _describe(exc):
     """例外を、画面に出しやすい辞書に直す。"""
     etype = type(exc).__name__
@@ -228,8 +293,10 @@ def _describe(exc):
             if base.__name__ in _HINTS:
                 hint = _HINTS[base.__name__]
                 break
-    return {"type": etype, "message": message, "line": line, "source": source.strip(),
-            "hint": hint, "trace": trace[-6:]}
+    # 教材の関数（slider など）が出すエラーは、もともと日本語なので訳さない
+    ja = "" if re.search(r"[ぁ-んァ-ヶ一-龠]", message) else _translate(message)
+    return {"type": etype, "message": message, "message_ja": ja, "line": line,
+            "source": source.strip(), "hint": hint, "trace": trace[-6:]}
 
 
 def _run(code, params_json):

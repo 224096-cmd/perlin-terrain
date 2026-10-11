@@ -13,10 +13,104 @@ const HEIGHT_STOPS = [
 ];
 const MAX_CUBES = 300000;
 
+// 場所から決まる 0〜1 の数（ブロックごとの明るさを少しずつ変えるのに使う）
 function hash01(i, j) {
   let n = (i * 374761393 + j * 668265263) | 0;
   n = Math.imul(n ^ (n >>> 13), 1274126177);
   return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+}
+
+// ---------- ブロックの質感（16×16 のドット絵をその場で描く。画像ファイルは使わない） ----------
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const PIXELS = {
+  grass: ['#5fa84a', '#6db857', '#4f9440', '#58a046', '#76c060'],
+  dirt: ['#8a6240', '#7a5536', '#96704c', '#6f4c30', '#a07a55'],
+  stone: ['#8c8f92', '#7d8083', '#9a9da0', '#74777a', '#a4a7aa'],
+  sand: ['#dccb8c', '#e6d79c', '#d2bf7e', '#cdb974', '#e9dca6'],
+  snow: ['#f2f5f7', '#ffffff', '#e6ecf0', '#dfe7ec', '#f8fbfc'],
+  water: ['#2f72b5', '#3a80c4', '#2a68a8', '#3577bb', '#4a90d0'],
+  forest: ['#2f6f3c', '#27603a', '#3a7f46', '#1f5530', '#46904f'],
+  ice: ['#bfe2ee', '#d4eef6', '#a9d6e6', '#e6f6fb', '#b4dcea'],
+  lava: ['#e0521c', '#f08a24', '#c93a14', '#ffb347', '#d8451a'],
+  plain: ['#e8e8e8', '#f4f4f4', '#dcdcdc', '#d2d2d2', '#eeeeee'],
+};
+
+function pixelTexture(seed, base, cap = null) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 16;
+  const g = canvas.getContext('2d');
+  const rand = seeded(seed);
+  const pick = (list) => (rand() < 0.45 ? list[0] : list[1 + Math.floor(rand() * (list.length - 1))]);
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      g.fillStyle = pick(PIXELS[base]);
+      g.fillRect(x, y, 1, 1);
+    }
+  }
+  if (cap) {
+    // 側面の上のふち（草や雪がかぶさっている部分）。列ごとに長さを変えて、ぎざぎざにする
+    for (let x = 0; x < 16; x++) {
+      const depth = 3 + Math.floor(rand() * 3);
+      for (let y = 0; y < depth; y++) {
+        g.fillStyle = pick(PIXELS[cap]);
+        g.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// 種類ごとの材質（立方体の 6 面: 右・左・上・下・前・後ろ）
+let blockMaterials = null;
+function getBlockMaterials() {
+  if (blockMaterials) return blockMaterials;
+  const mat = (tex) => new THREE.MeshLambertMaterial({ map: tex });
+  const cube = (top, side, bottom) => [side, side, top, bottom, side, side];
+  const t = {};
+  let seed = 11;
+  for (const name of Object.keys(PIXELS)) t[name] = mat(pixelTexture(seed++, name));
+  const grassSide = mat(pixelTexture(101, 'dirt', 'grass'));
+  const snowSide = mat(pixelTexture(102, 'stone', 'snow'));
+  blockMaterials = {
+    grass: cube(t.grass, grassSide, t.dirt),
+    snow: cube(t.snow, snowSide, t.stone),
+    dirt: cube(t.dirt, t.dirt, t.dirt),
+    stone: cube(t.stone, t.stone, t.stone),
+    sand: cube(t.sand, t.sand, t.sand),
+    water: cube(t.water, t.water, t.water),
+    forest: cube(t.forest, t.forest, t.forest),
+    ice: cube(t.ice, t.ice, t.ice),
+    lava: cube(t.lava, t.lava, t.lava),
+    plain: cube(t.plain, t.plain, t.plain),
+  };
+  return blockMaterials;
+}
+
+// いちばん上が top のとき、上から depth 個目（0 が最上段）に置くブロックの種類
+function layerType(top, depth) {
+  if (depth === 0) return top;
+  switch (top) {
+    case 'grass': case 'forest': case 'dirt': return depth <= 3 ? 'dirt' : 'stone';
+    case 'sand': return depth <= 3 ? 'sand' : 'stone';
+    case 'water': return depth <= 2 ? 'water' : 'stone';
+    case 'ice': return depth <= 1 ? 'ice' : depth <= 3 ? 'water' : 'stone';
+    case 'lava': return depth <= 2 ? 'lava' : 'stone';
+    case 'plain': return depth <= 3 ? 'plain' : 'stone';
+    default: return 'stone';
+  }
 }
 
 export class TerrainView {
@@ -164,11 +258,15 @@ export class TerrainView {
   }
 
   _clear() {
+    // 種類ごとの材質は使い回すので、ここでは捨てない
+    const shared = blockMaterials ? new Set(Object.values(blockMaterials).flat()) : new Set();
+    const geos = new Set();
     for (const obj of [...this.group.children]) {
       this.group.remove(obj);
-      obj.geometry?.dispose();
-      obj.material?.dispose();
+      if (obj.geometry) geos.add(obj.geometry);
+      for (const mat of [].concat(obj.material || [])) if (!shared.has(mat)) mat.dispose();
     }
+    for (const g of geos) g.dispose();
   }
 
   _rebuild() {
@@ -241,6 +339,31 @@ export class TerrainView {
     return bottom;
   }
 
+  // マスごとの「いちばん上のブロックの種類」を決める
+  _topTypes() {
+    const n = this.data.w * this.data.h;
+    const types = new Array(n);
+    if (this.paletteNames) {
+      for (let k = 0; k < n; k++) {
+        const name = this.paletteNames[this.cellNames[k]];
+        types[k] = NAMED_COLORS[name] ? name : 'plain';    // 色コードで指定されたマスは、色を付けた無地のブロック
+      }
+      return types;
+    }
+    // 種類の指定がないときは、高さから決める
+    const floor = this.sea !== null ? Math.max(this.min, this.sea) : this.min;
+    const span = Math.max(1e-6, this.max - floor);
+    for (let k = 0; k < n; k++) {
+      const v = this.heights[k];
+      const t = (v - floor) / span;
+      if (this.sea !== null && v <= this.sea + 1) types[k] = 'sand';
+      else if (t < 0.58) types[k] = 'grass';
+      else if (t < 0.82) types[k] = 'stone';
+      else types[k] = 'snow';
+    }
+    return types;
+  }
+
   _buildBlocks() {
     const { w, h } = this.data;
     const n = w * h;
@@ -251,6 +374,7 @@ export class TerrainView {
       if (H[i] < lowest) lowest = H[i];
     }
     const base = lowest - 1;        // いちばん低い柱でも 1 個はブロックが見えるようにする
+    const tops = this._topTypes();
 
     // 外から見える範囲（となりより高い部分）だけにブロックを置く
     const from = new Int32Array(n);
@@ -266,60 +390,76 @@ export class TerrainView {
       }
     }
     const stacked = count <= MAX_CUBES;
+    const materials = getBlockMaterials();
+    const rgb = this.cellRGB;
+
     if (!stacked) {
-      count = n;
+      // 高低差が大きすぎるときは、1 マスを 1 本の柱（色を付けた無地）で表す
       this.notice = '高低差が大きいので、1 マスを 1 本の柱として表示しています。';
+      const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), materials.plain, n);
+      const m = mesh.instanceMatrix.array;
+      const col = new Float32Array(n * 3);
+      for (let k = 0; k < n; k++) {
+        const tall = H[k] - base;
+        const o = k * 16;
+        m[o] = 1; m[o + 5] = tall; m[o + 10] = 1; m[o + 15] = 1;
+        m[o + 12] = (k % w) - w / 2 + 0.5;
+        m[o + 13] = base + tall / 2;
+        m[o + 14] = Math.floor(k / w) - h / 2 + 0.5;
+        col[k * 3] = rgb[k * 3]; col[k * 3 + 1] = rgb[k * 3 + 1]; col[k * 3 + 2] = rgb[k * 3 + 2];
+      }
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(col, 3);
+      mesh.frustumCulled = false;
+      this.group.add(mesh);
+      this.stats = { mode: 'blocks', triangles: n * 12, cubes: n };
+      return base;
     }
 
+    // 1 回目: 種類ごとの個数を数える
+    const counts = {};
+    for (let k = 0; k < n; k++) {
+      for (let y = H[k]; y > from[k]; y--) {
+        const type = layerType(tops[k], H[k] - y);
+        counts[type] = (counts[type] || 0) + 1;
+      }
+    }
+    // 2 回目: 種類ごとにまとめて配置する（同じ形をまとめて描く「インスタンス描画」）
     const geo = new THREE.BoxGeometry(1, 1, 1);
-    const mat = new THREE.MeshLambertMaterial();
-    const mesh = new THREE.InstancedMesh(geo, mat, count);
-    const m = mesh.instanceMatrix.array;
-    const col = new Float32Array(count * 3);
-    const rgb = this.cellRGB;
-    const dirt = new THREE.Color(NAMED_COLORS.dirt);
-    const stone = new THREE.Color(NAMED_COLORS.stone);
-    const names = this.paletteNames;
-    let p = 0;
-    const put = (x, y, z, sy, r, g, b) => {
-      const o = p * 16;
-      m[o] = 1; m[o + 1] = 0; m[o + 2] = 0; m[o + 3] = 0;
-      m[o + 4] = 0; m[o + 5] = sy; m[o + 6] = 0; m[o + 7] = 0;
-      m[o + 8] = 0; m[o + 9] = 0; m[o + 10] = 1; m[o + 11] = 0;
-      m[o + 12] = x; m[o + 13] = y; m[o + 14] = z; m[o + 15] = 1;
-      col[p * 3] = r; col[p * 3 + 1] = g; col[p * 3 + 2] = b;
-      p++;
-    };
+    const batches = {};
+    for (const [type, c] of Object.entries(counts)) {
+      const mesh = new THREE.InstancedMesh(geo, materials[type], c);
+      mesh.frustumCulled = false;
+      batches[type] = { mesh, m: mesh.instanceMatrix.array, col: new Float32Array(c * 3), p: 0 };
+      this.group.add(mesh);
+    }
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
         const k = j * w + i;
         const x = i - w / 2 + 0.5;
         const z = j - h / 2 + 0.5;
-        const r = rgb[k * 3], g = rgb[k * 3 + 1], b = rgb[k * 3 + 2];
-        if (!stacked) {
-          const tall = H[k] - base;
-          put(x, base + tall / 2, z, tall, r, g, b);
-          continue;
-        }
-        const name = names ? names[this.cellNames[k]] : null;
-        const soil = name ? (name === 'grass' || name === 'forest') : (g > r && g > b);
         for (let y = H[k]; y > from[k]; y--) {
           const depth = H[k] - y;
-          const shade = 0.94 + 0.08 * hash01(i * 31 + y, j * 17 - y);
-          let cr = r, cg = g, cb = b;
-          if (depth > 0) {
-            if (depth <= 3 && soil) { cr = dirt.r; cg = dirt.g; cb = dirt.b; }
-            else if (depth > 3 || name === 'snow') { cr = stone.r; cg = stone.g; cb = stone.b; }
-            else { cr = r * 0.82; cg = g * 0.82; cb = b * 0.82; }
+          const type = layerType(tops[k], depth);
+          const b = batches[type];
+          // 水面は、ブロックの上の面より少し低くする
+          const sy = type === 'water' && depth === 0 ? 0.86 : 1;
+          const o = b.p * 16;
+          b.m[o] = 1; b.m[o + 5] = sy; b.m[o + 10] = 1; b.m[o + 15] = 1;
+          b.m[o + 12] = x; b.m[o + 13] = y - 1 + sy / 2; b.m[o + 14] = z;
+          const shade = 0.93 + 0.1 * hash01(i * 31 + y, j * 17 - y);
+          if (type === 'plain') {
+            b.col[b.p * 3] = rgb[k * 3] * shade; b.col[b.p * 3 + 1] = rgb[k * 3 + 1] * shade; b.col[b.p * 3 + 2] = rgb[k * 3 + 2] * shade;
+          } else {
+            b.col[b.p * 3] = shade; b.col[b.p * 3 + 1] = shade; b.col[b.p * 3 + 2] = shade;
           }
-          put(x, y - 0.5, z, 1, cr * shade, cg * shade, cb * shade);
+          b.p += 1;
         }
       }
     }
-    mesh.instanceColor = new THREE.InstancedBufferAttribute(col, 3);
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.frustumCulled = false;
-    this.group.add(mesh);
+    for (const b of Object.values(batches)) {
+      b.mesh.instanceColor = new THREE.InstancedBufferAttribute(b.col, 3);
+      b.mesh.instanceMatrix.needsUpdate = true;
+    }
     this.stats = { mode: 'blocks', triangles: count * 12, cubes: count };
     return base;
   }

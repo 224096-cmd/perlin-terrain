@@ -27,11 +27,12 @@ def perlin1(x):
 
 
 WIDTH = 300                 # 横方向の点の数
+shift = 0                   # ノイズのどの場所から使うか（ずらす量）
 ys = []
 for k in range(WIDTH):
     x = k / WIDTH           # 横位置を 0 〜 1 に直す
     # 周波数: x に掛ける（進む速さを変える） / 振幅: 結果に掛ける（高さを変える）
-    ys.append(amp * perlin1(x * freq))
+    ys.append(amp * perlin1(x * freq + shift))
 
 plot(ys, "地面")
 print("いちばん高い所:", round(max(ys), 3), " いちばん低い所:", round(min(ys), 3))

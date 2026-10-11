@@ -10,13 +10,19 @@ octaves = slider("オクターブ数", 1, 6, 4)
 persistence = slider("持続度", 0.1, 0.9, 0.5, 0.1)
 move = slider("東へ移動", 0, 200, 0, 2)
 
-random.seed(seed)
-perm = list(range(256))
-random.shuffle(perm)
-arrows = []
-for i in range(256):
-    angle = random.uniform(0, 2 * math.pi)
-    arrows.append((math.cos(angle), math.sin(angle)))
+def make_tables():
+    """ノイズに使う表を作る（ステップ 6 と同じ）。かき混ぜた番号の表と、256 本の矢印を返す"""
+    random.seed(seed)
+    perm = list(range(256))
+    random.shuffle(perm)
+    arrows = []
+    for i in range(256):
+        angle = random.uniform(0, 2 * math.pi)
+        arrows.append((math.cos(angle), math.sin(angle)))
+    return perm, arrows
+
+
+perm, arrows = make_tables()
 
 
 def lerp(a, b, t):

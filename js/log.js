@@ -12,6 +12,7 @@ export const LOG_COLUMNS = [
   'timestamp', 'session', 'step', 'lesson', 'event', 'trigger', 'ok',
   'error_type', 'error_line', 'python_ms', 'transfer_ms', 'render_ms', 'total_ms',
   'code_chars', 'code_edited', 'outputs', 'slider_name', 'slider_value', 'detail',
+  'editor', 'result_changed',
 ];
 
 function stepOf(lessonId) {
@@ -71,8 +72,8 @@ export class Logger {
   summary() {
     const rows = LESSONS.map((l, i) => ({
       step: i + 1, id: l.id, title: l.title,
-      opens: 0, runs: 0, userRuns: 0, errors: 0, editedRuns: 0, sliderMoves: 0, resets: 0,
-      activeMs: 0, pythonMs: [],
+      opens: 0, runs: 0, userRuns: 0, editRuns: 0, errors: 0, editedRuns: 0, blockEdits: 0, sliderMoves: 0, resets: 0,
+      tasksTotal: l.tasks.length, tasks: {}, activeMs: 0, pythonMs: [],
     }));
     const byId = new Map(rows.map((r) => [r.id, r]));
     let prev = null;
@@ -87,9 +88,15 @@ export class Logger {
       if (e.event === 'lesson_open') r.opens += 1;
       else if (e.event === 'slider') r.sliderMoves += 1;
       else if (e.event === 'code_reset') r.resets += 1;
+      else if (e.event === 'block_edit') r.blockEdits += 1;
+      else if (e.event === 'task_check') {
+        const m = /^task(\d+)=(\d)$/.exec(e.detail || '');
+        if (m) r.tasks[m[1]] = m[2] === '1';
+      }
       else if (e.event === 'run') {
         r.runs += 1;
         if (e.trigger === 'button' || e.trigger === 'shortcut') r.userRuns += 1;
+        if (e.trigger === 'edit') r.editRuns += 1;
         if (!e.ok) r.errors += 1;
         if (e.code_edited) r.editedRuns += 1;
         if (e.ok && Number.isFinite(e.python_ms)) r.pythonMs.push(e.python_ms);
@@ -97,6 +104,7 @@ export class Logger {
     }
     for (const r of rows) {
       r.activeMin = round(r.activeMs / 60000, 1);
+      r.tasksDone = Object.values(r.tasks).filter(Boolean).length;
       r.meanPythonMs = r.pythonMs.length ? round(r.pythonMs.reduce((s, v) => s + v, 0) / r.pythonMs.length, 1) : null;
     }
     return rows;
@@ -117,7 +125,7 @@ export class Logger {
       exportedAt: new Date().toISOString(),
       device: deviceInfo(),
       columns: LOG_COLUMNS,
-      summary: this.summary().map(({ pythonMs, activeMs, ...rest }) => rest),
+      summary: this.summary().map(({ pythonMs, activeMs, tasks, ...rest }) => rest),
       events: this.events,
     }, null, 2);
   }
@@ -141,14 +149,17 @@ export class Logger {
       '## ステップごとの集計',
       '',
       mdTable(
-        ['ステップ', 'タイトル', '開いた回数', '実行回数', 'うち手動実行', 'エラー回数', 'コード変更後の実行', 'スライダー操作', 'お手本に戻した回数', '作業時間（分）', 'Python 平均時間（ms）'],
-        s.map((r) => [r.step, r.title, r.opens, r.runs, r.userRuns, r.errors, r.editedRuns, r.sliderMoves, r.resets, r.activeMin, r.meanPythonMs ?? '-']),
+        ['ステップ', 'タイトル', '開いた回数', '実行回数', 'うち手動実行', 'うち編集による自動実行', 'エラー回数', 'コード変更後の実行', 'ブロック操作', 'スライダー操作', 'お手本に戻した回数', 'やった課題', '作業時間（分）', 'Python 平均時間（ms）'],
+        s.map((r) => [r.step, r.title, r.opens, r.runs, r.userRuns, r.editRuns, r.errors, r.editedRuns, r.blockEdits, r.sliderMoves, r.resets, `${r.tasksDone}/${r.tasksTotal}`, r.activeMin, r.meanPythonMs ?? '-']),
       ),
       '',
       '## 項目の意味',
       '',
       '- 実行回数: ステップを開いたときの自動実行、スライダー操作による再実行を含む。',
-      '- うち手動実行: 「実行」ボタンまたは Ctrl+Enter による実行。',
+      '- うち手動実行: 「実行する」ボタンまたは Ctrl+Enter による実行。',
+      '- うち編集による自動実行: 数字の書き換え・ブロックの移動・テキストの入力のあとに、自動で行われた実行。',
+      '- ブロック操作: ブロック表示での操作の回数（移動・追加・複製・削除・元に戻す、数字や種類の書き換え）。数字を続けて打った分は 1 回と数える。',
+      '- やった課題: 「やってみよう」で「やった」に印を付けた数。',
       '- エラー回数: エラーで終わった実行の数（「止める」ボタンでの中断、時間切れを含む）。',
       '- コード変更後の実行: お手本と異なるコードでの実行。',
       '- 作業時間: 同じステップ内で連続する記録の間隔を合計したもの（5 分以上の空白は除く）。',

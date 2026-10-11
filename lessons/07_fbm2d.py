@@ -8,13 +8,19 @@ persistence = slider("持続度（振幅の残り方）", 0.1, 0.9, 0.5, 0.1)
 base_freq = slider("最初の周波数", 1, 6, 2)
 size = slider("地図の大きさ", 16, 64, 32, 16)
 
-random.seed(seed)
-perm = list(range(256))
-random.shuffle(perm)
-arrows = []
-for i in range(256):
-    angle = random.uniform(0, 2 * math.pi)
-    arrows.append((math.cos(angle), math.sin(angle)))
+def make_tables():
+    """ノイズに使う表を作る（ステップ 6 と同じ）。かき混ぜた番号の表と、256 本の矢印を返す"""
+    random.seed(seed)
+    perm = list(range(256))
+    random.shuffle(perm)
+    arrows = []
+    for i in range(256):
+        angle = random.uniform(0, 2 * math.pi)
+        arrows.append((math.cos(angle), math.sin(angle)))
+    return perm, arrows
+
+
+perm, arrows = make_tables()
 
 
 def lerp(a, b, t):

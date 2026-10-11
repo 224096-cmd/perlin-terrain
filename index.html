@@ -47,26 +47,51 @@
     </header>
 
     <div class="lesson-text">
-      <div class="lesson-intro" id="lessonIntro"></div>
+      <div class="lesson-main">
+        <div class="lesson-intro" id="lessonIntro"></div>
+        <figure class="lesson-figure" id="lessonFigure" hidden></figure>
+        <dl class="lesson-terms" id="lessonTerms"></dl>
+      </div>
       <aside class="lesson-side">
         <h2>やってみよう</h2>
         <ol class="lesson-tasks" id="lessonTasks"></ol>
-        <details class="lesson-terms" id="lessonTermsBox">
-          <summary>このステップのことば</summary>
-          <dl id="lessonTerms"></dl>
-        </details>
       </aside>
     </div>
+
+    <aside class="guide" id="guide" hidden>
+      <h2>コードの動かし方</h2>
+      <ul>
+        <li><span class="guide-num">12</span>枠で囲まれた数字は書き換えられます。書き換えると、右の結果がすぐ変わります。</li>
+        <li><span class="guide-grip"></span>行の左のつまみをつかむと、その行（ブロック）を上下に動かせます。</li>
+        <li>右のスライダーを動かすと、コードの中の数字も一緒に変わります。</li>
+        <li>自由に書きたいときは「テキスト」に切り替えます。</li>
+      </ul>
+      <button type="button" class="btn small" id="guideClose">分かった</button>
+    </aside>
 
     <div class="workbench">
       <section class="panel code-panel" aria-label="Python のコード">
         <div class="toolbar">
+          <div class="segmented" role="group" aria-label="コードの表示のしかた">
+            <button type="button" id="modeBlocksEd" aria-pressed="true">ブロック</button>
+            <button type="button" id="modeTextEd" aria-pressed="false">テキスト</button>
+          </div>
           <button type="button" class="btn primary" id="runBtn" disabled>実行する</button>
           <button type="button" class="btn" id="stopBtn" hidden>止める</button>
-          <span class="toolbar-hint">Ctrl + Enter でも実行できます</span>
-          <button type="button" class="btn quiet" id="resetBtn">お手本に戻す</button>
+          <label class="check auto-run"><input type="checkbox" id="autoRun" checked> 変えたらすぐ実行</label>
+          <span class="toolbar-end">
+            <button type="button" class="btn quiet small" id="undoBtn" disabled>元に戻す</button>
+            <button type="button" class="btn quiet small" id="redoBtn" disabled>やり直す</button>
+            <button type="button" class="btn quiet small" id="resetBtn">お手本に戻す</button>
+          </span>
         </div>
-        <div class="editor" id="editor"></div>
+        <div class="palette" id="palette" hidden>
+          <span class="palette-label">部品（押すか、つかんで入れる）</span>
+          <div class="palette-items" id="paletteItems"></div>
+        </div>
+        <p class="editor-note" id="editorNote" hidden></p>
+        <div class="block-editor" id="blockEditor"></div>
+        <div class="editor" id="editor" hidden></div>
         <div class="errorbox" id="errorBox" role="alert" hidden></div>
         <div class="console" id="consoleBox" hidden>
           <h2>print の出力</h2>
@@ -74,12 +99,16 @@
         </div>
       </section>
 
-      <section class="panel out-panel" aria-label="実行結果">
+      <section class="panel out-panel" id="outPanel" aria-label="実行結果">
+        <p class="run-note" id="runNote" role="status">Python の準備ができると、ここに結果が表示されます。</p>
         <div class="sliders" id="sliders" hidden></div>
-        <p class="out-empty" id="outEmpty">Python の準備ができると、ここに結果が表示されます。</p>
 
         <div class="out-block" id="plotBlock" hidden>
-          <div class="out-head"><h2>グラフ</h2><button type="button" class="btn quiet small" id="plotSave">画像を保存</button></div>
+          <div class="out-head">
+            <h2>グラフ</h2>
+            <label class="check"><input type="checkbox" id="ghostToggle" checked> ひとつ前の結果も表示</label>
+            <button type="button" class="btn quiet small" id="plotSave">画像を保存</button>
+          </div>
           <div class="plot" id="plot"></div>
           <p class="note" id="plotNote" hidden></p>
         </div>
@@ -95,6 +124,7 @@
           <div class="terrain" id="terrain"></div>
           <div class="terrain-tools">
             <label class="check"><input type="checkbox" id="autoRotate"> 自動で回す</label>
+            <span class="terrain-hint">ドラッグで回転、ホイール・ピンチで拡大</span>
             <button type="button" class="btn quiet small" id="resetView">視点を戻す</button>
             <button type="button" class="btn quiet small" id="terrainSave">画像を保存</button>
           </div>
@@ -111,8 +141,8 @@
     </div>
 
     <nav class="pager" aria-label="前後のステップ">
-      <button type="button" class="btn" id="prevBtn">前のステップ</button>
-      <button type="button" class="btn primary" id="nextBtn">次のステップ</button>
+      <button type="button" class="btn pager-btn" id="prevBtn"><span class="pager-dir">前のステップ</span><span class="pager-title" id="prevTitle"></span></button>
+      <button type="button" class="btn primary pager-btn" id="nextBtn"><span class="pager-dir">次のステップ</span><span class="pager-title" id="nextTitle"></span></button>
     </nav>
   </section>
 

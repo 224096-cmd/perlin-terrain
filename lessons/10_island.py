@@ -11,13 +11,19 @@ sea = slider("海面の高さ", 0, 20, 5)
 OCTAVES = 5
 PERSISTENCE = 0.5
 
-random.seed(seed)
-perm = list(range(256))
-random.shuffle(perm)
-arrows = []
-for i in range(256):
-    angle = random.uniform(0, 2 * math.pi)
-    arrows.append((math.cos(angle), math.sin(angle)))
+def make_tables():
+    """ノイズに使う表を作る（ステップ 6 と同じ）。かき混ぜた番号の表と、256 本の矢印を返す"""
+    random.seed(seed)
+    perm = list(range(256))
+    random.shuffle(perm)
+    arrows = []
+    for i in range(256):
+        angle = random.uniform(0, 2 * math.pi)
+        arrows.append((math.cos(angle), math.sin(angle)))
+    return perm, arrows
+
+
+perm, arrows = make_tables()
 
 
 def lerp(a, b, t):
@@ -62,33 +68,38 @@ def island_mask(i, j):
     return max(0.0, 1 - d * d)
 
 
-def block_color(h):
+def top_block(h):
+    """高さ h の場所の、いちばん上のブロックの種類を決める（上から順に調べる）"""
+    if h < sea:
+        return "water"
     if h <= sea + 1:
         return "sand"
-    elif h <= sea + 7:
+    if h <= sea + 7:
         return "grass"
-    elif h <= sea + 13:
+    if h <= sea + 13:
         return "forest"
-    elif h <= sea + 20:
+    if h <= sea + 20:
         return "stone"
-    else:
-        return "snow"
+    return "snow"
 
 
 heights = []
-colors = []
+blocks = []
 for j in range(size):
     height_row = []
-    color_row = []
+    block_row = []
     for i in range(size):
         x = i / size * scale
         y = j / size * scale
         n = fbm(x, y)                   # ノイズ（だいたい -1 〜 1）
         e = (n + 1) / 2                 # 0 〜 1 に直す
         h = round(height * e * island_mask(i, j))
+        block = top_block(h)
+        if block == "water":
+            h = sea                     # 水は、海面の高さまで満たす
         height_row.append(h)
-        color_row.append(block_color(h))
+        block_row.append(block)
     heights.append(height_row)
-    colors.append(color_row)
+    blocks.append(block_row)
 
-terrain(heights, sea=sea, colors=colors)
+terrain(heights, blocks=blocks)
