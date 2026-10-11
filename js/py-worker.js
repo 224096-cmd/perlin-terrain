@@ -6,7 +6,7 @@ const MAX_STDOUT_LINES = 400;
 const MAX_STDOUT_CHARS = 40000;
 
 let runUser = null;         // Python 側の _run 関数
-let outputs = [];           // 今回の実行で plot / heatmap / terrain から届いたデータ
+let outputs = [];           // 今回の実行で plot / terrain から届いたデータ
 let stdout = [];
 let stdoutChars = 0;
 let stdoutCut = false;
@@ -41,14 +41,12 @@ function copyBuffer(proxy, type) {
   }
 }
 
-// Python 側の plot() / heatmap() / terrain() から呼ばれる
+// Python 側の plot() / terrain() から呼ばれる
 function emit(kind, metaJson, a, b) {
   const t = performance.now();
   const meta = JSON.parse(metaJson);
   if (kind === 'plot') {
     outputs.push({ kind, label: meta.label, dots: meta.dots, width: meta.width, ys: copyBuffer(a, 'f32'), xs: copyBuffer(b, 'f32') });
-  } else if (kind === 'heatmap') {
-    outputs.push({ kind, label: meta.label, w: meta.w, h: meta.h, lo: meta.lo, hi: meta.hi, data: copyBuffer(a, 'f32') });
   } else if (kind === 'terrain') {
     outputs.push({ kind, w: meta.w, h: meta.h, sea: meta.sea, palette: meta.palette, data: copyBuffer(a, 'f32'), colors: copyBuffer(b, 'u8') });
   }

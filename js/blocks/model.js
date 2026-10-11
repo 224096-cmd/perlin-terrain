@@ -46,7 +46,7 @@ export function category(block) {
     else if (')]}'.includes(t.text)) depth -= 1;
     else if (depth === 0 && /^(=|\+=|-=|\*=|\/=|\/\/=|%=|\*\*=)$/.test(t.text)) return 'assign';
   }
-  if (sig[0].type === 'name' && ['plot', 'heatmap', 'terrain', 'print'].includes(first)) return 'show';
+  if (sig[0].type === 'name' && ['plot', 'terrain', 'print'].includes(first)) return 'show';
   return 'call';
 }
 

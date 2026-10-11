@@ -129,7 +129,7 @@ export class PyRunner extends EventTarget {
         if (!this._current || this._current.id !== id) return;
         const sec = Math.round(timeoutMs / 1000);
         const result = this._abortResult('Timeout', `${sec} 秒たっても終わらなかったので、実行を止めました。`,
-          'くり返し（for / while）が終わらなくなっていないか、地図が大きすぎないかを確認しましょう。');
+          'くり返し（for / while）が終わらなくなっていないか、地形が大きすぎないかを確認しましょう。');
         this._finish(result);
         this._restart();
       }, timeoutMs);

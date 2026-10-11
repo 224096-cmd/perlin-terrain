@@ -13,46 +13,44 @@ function mulberry32(seed) {
 }
 
 export function generateJS(size, octaves) {
-  const SEED = 7, HEIGHT = 16, SCALE = 3, PERSISTENCE = 0.5;
+  const SEED = 7, HEIGHT = 12, SCALE = 3, PERSISTENCE = 0.5, DIRECTIONS = 6;
   const rand = mulberry32(SEED);
-  const perm = Array.from({ length: 256 }, (_, i) => i);
-  for (let i = 255; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [perm[i], perm[j]] = [perm[j], perm[i]];
-  }
-  const arrows = [];
-  for (let i = 0; i < 256; i++) {
-    const angle = rand() * 2 * Math.PI;
-    arrows.push([Math.cos(angle), Math.sin(angle)]);
-  }
+  const slopes = [];
+  for (let i = 0; i < 256; i++) slopes.push(rand() * 2 - 1);
+
   const mod = (n) => ((n % 256) + 256) % 256;
   const lerp = (a, b, t) => a + (b - a) * t;
   const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
-  const corner = (ix, iy, x, y) => {
-    const a = arrows[perm[mod(perm[mod(ix)] + iy)]];
-    return a[0] * (x - ix) + a[1] * (y - iy);
+  const perlin1 = (x) => {
+    const i = Math.floor(x);
+    const t = x - i;
+    const left = slopes[mod(i)] * t;
+    const right = slopes[mod(i + 1)] * (t - 1);
+    return lerp(left, right, fade(t)) * 2;
   };
-  const perlin2 = (x, y) => {
-    const ix = Math.floor(x), iy = Math.floor(y);
-    const u = fade(x - ix), v = fade(y - iy);
-    const top = lerp(corner(ix, iy, x, y), corner(ix + 1, iy, x, y), u);
-    const bottom = lerp(corner(ix, iy + 1, x, y), corner(ix + 1, iy + 1, x, y), u);
-    return lerp(top, bottom, v);
-  };
-  const fbm = (x, y) => {
+  const fbm1 = (x) => {
     let total = 0, freq = 1, amp = 1;
     for (let o = 0; o < octaves; o++) {
-      total += amp * perlin2(x * freq + o * 17.3, y * freq + o * 17.3);
+      total += amp * perlin1(x * freq + o * 17.3);
       freq *= 2;
       amp *= PERSISTENCE;
     }
     return total;
   };
+  const ground = (x, z) => {
+    let total = 0;
+    for (let k = 0; k < DIRECTIONS; k++) {
+      const angle = (Math.PI * k) / DIRECTIONS;
+      const p = x * Math.cos(angle) + z * Math.sin(angle);
+      total += fbm1(p + k * 31.7);
+    }
+    return total / Math.sqrt(DIRECTIONS);
+  };
   const heights = [];
   for (let j = 0; j < size; j++) {
     const row = [];
     for (let i = 0; i < size; i++) {
-      row.push(HEIGHT * fbm((i / size) * SCALE, (j / size) * SCALE));
+      row.push(Math.round(HEIGHT * ground((i / size) * SCALE, (j / size) * SCALE)));
     }
     heights.push(row);
   }

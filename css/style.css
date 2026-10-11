@@ -3,9 +3,9 @@
 :root {
   color-scheme: light dark;
 
-  --paper: #edf1ee;        /* 地図の紙 */
+  --paper: #edf1ee;        /* 背景（紙の色） */
   --surface: #ffffff;
-  --ink: #17262c;          /* 地図の文字 */
+  --ink: #17262c;          /* 文字の色 */
   --ink-2: #4c5d62;
   --line: #c7d2ce;
   --grid: #e3e9e6;
@@ -636,22 +636,6 @@ body.dragging-block * { cursor: grabbing !important; }
 .tip-row { display: flex; align-items: center; gap: 6px; }
 .tip-label { overflow: hidden; text-overflow: ellipsis; max-width: 150px; color: var(--ink-2); }
 .tip-row b { margin-left: auto; padding-left: 8px; font-variant-numeric: tabular-nums; }
-
-/* 地図 */
-.maps { display: grid; gap: 14px; grid-template-columns: minmax(0, 420px); }
-.maps.many { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-.map-figure figcaption { font-size: 0.85rem; color: var(--ink-2); line-height: 1.4; margin-bottom: 4px; }
-.map-canvas {
-  display: block;
-  width: 100%;
-  image-rendering: pixelated;
-  border: 1px solid var(--line);
-  touch-action: pan-y;
-  cursor: crosshair;
-}
-.map-scale { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-top: 4px; }
-.map-ramp { flex: 1; height: 8px; border: 1px solid var(--line); background: linear-gradient(to right, #000, #fff); }
-.map-readout { font-size: 0.8rem; color: var(--ink-2); font-variant-numeric: tabular-nums; min-height: 1.8em; }
 
 /* 3D */
 .terrain {

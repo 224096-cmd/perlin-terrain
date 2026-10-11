@@ -5,7 +5,6 @@ import { FIGURES } from './figures.js';
 import { PyRunner } from './runner.js';
 import { Logger } from './log.js';
 import { PlotView } from './views/plot.js';
-import { MapGallery } from './views/heatmap.js';
 import { BlockEditor } from './blocks/view.js';
 import { parseBlocks } from './blocks/model.js';
 import { findSliderDefault, logicalLines } from './blocks/pytokens.js';
@@ -22,14 +21,13 @@ const store = {
   remove(key) { try { localStorage.removeItem(key); } catch { /* 同上 */ } },
   json(key, fallback) { try { return JSON.parse(this.get(key)) ?? fallback; } catch { return fallback; } },
 };
-const CODE_KEY = 'perlinTerrain.code3.';      // 書き換えたコードの保存先（ステップごと）
+const CODE_KEY = 'perlinTerrain.code4.';      // 書き換えたコードの保存先（ステップごと）
 
 $('version').textContent = 'v' + APP_VERSION;
 
 const logger = new Logger();
 const runner = new PyRunner();
 const plotView = new PlotView($('plot'));
-const mapGallery = new MapGallery($('maps'));
 
 let terrainModule = null;       // 3D 表示のプログラムは、最初に必要になったときに読み込む
 const loadTerrain = () => (terrainModule ??= import('./views/terrain3d.js'));
@@ -557,16 +555,14 @@ function showStats(res, renderMs) {
 
 async function showOutputs(outputs, newBurst = true) {
   const plots = outputs.filter((o) => o.kind === 'plot');
-  const maps = outputs.filter((o) => o.kind === 'heatmap');
   const terrain = outputs.filter((o) => o.kind === 'terrain').pop() || null;
 
   // コードの中で呼ばれた順に並べる
   const order = [...new Set(outputs.map((o) => o.kind))];
-  const blocks = { plot: $('plotBlock'), heatmap: $('mapBlock'), terrain: $('terrainBlock') };
-  for (const kind of order) $('runStats').before(blocks[kind]);
+  const blocks = { plot: $('plotBlock'), terrain: $('terrainBlock') };
+  for (const kind of order) if (blocks[kind]) $('runStats').before(blocks[kind]);
 
   $('plotBlock').hidden = plots.length === 0;
-  $('mapBlock').hidden = maps.length === 0;
   $('terrainBlock').hidden = !terrain;
 
   if (plots.length) {
@@ -575,7 +571,6 @@ async function showOutputs(outputs, newBurst = true) {
     note.hidden = !plotView.badValues;
     note.textContent = plotView.badValues ? `数値でない値（nan や inf）が ${plotView.badValues} 個あったので、そこは描いていません。` : '';
   }
-  if (maps.length) mapGallery.update(maps);
   if (terrain) await showTerrain(terrain);
 }
 
@@ -590,7 +585,7 @@ async function showTerrain(data) {
       terrainFailed = true;
       $('terrain').hidden = true;
       note.hidden = false;
-      note.textContent = 'この端末では 3D 表示（WebGL）が使えないため、地形を立体で表示できません。heatmap() を使うと、上から見た地図で確かめられます。';
+      note.textContent = 'この端末では 3D 表示（WebGL）が使えないため、地形を立体で表示できません。別のブラウザや端末で開いてみてください。';
       return;
     }
   }
@@ -605,7 +600,6 @@ $('ghostToggle').addEventListener('change', (ev) => plotView.setGhostVisible(ev.
 
 const saveName = (kind) => `perlin-terrain-step${lessonIndex + 1}-${kind}-${stamp()}.png`;
 $('plotSave').addEventListener('click', () => plotView.toBlob((b) => b && downloadBlob(b, saveName('graph'))));
-$('mapSave').addEventListener('click', () => mapGallery.toBlob((b) => b && downloadBlob(b, saveName('map'))));
 $('terrainSave').addEventListener('click', () => terrainView?.toBlob((b) => b && downloadBlob(b, saveName('3d'))));
 
 // ---------- スライダー ----------

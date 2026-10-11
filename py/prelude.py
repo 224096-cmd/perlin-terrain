@@ -1,7 +1,7 @@
-"""教材の表示用関数（slider / plot / heatmap / terrain）と、学習者のコードを実行する仕組み。
+"""教材の表示用関数（slider / plot / terrain）と、学習者のコードを実行する仕組み。
 
 Web Worker の中で、Python の起動直後に 1 回だけ読み込まれる。
-学習者のコードからは slider() / plot() / heatmap() / terrain() の 4 つが使える。
+学習者のコードからは slider() / plot() / terrain() の 3 つが使える。
 """
 import array
 import json
@@ -11,10 +11,9 @@ import traceback
 
 USER_FILE = "main.py"
 
-MAX_CELLS = 256 * 256   # 地図・地形の最大マス数
+MAX_CELLS = 256 * 256   # 地形の最大マス数
 MAX_POINTS = 20000      # グラフ 1 本の最大点数
 MAX_PLOTS = 8           # 1 回の実行で描けるグラフの本数
-MAX_MAPS = 8            # 1 回の実行で描ける地図の枚数
 
 COLOR_NAMES = ("water", "sand", "grass", "forest", "dirt", "stone", "snow", "ice", "lava")
 _HEX_COLOR = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
@@ -22,7 +21,7 @@ _HEX_COLOR = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 _emit = None            # 画面側（JavaScript）へデータを渡す関数。Worker が設定する
 _params = {}            # 画面のスライダーの現在値（名前 -> 値）
 _sliders = {}           # 今回の実行で宣言されたスライダー（名前 -> 設定）
-_counts = {"plot": 0, "heatmap": 0}
+_counts = {"plot": 0}
 
 
 def _is_number(v):
@@ -105,11 +104,11 @@ def plot(ys, label="", xs=None, dots=False, width=2):
 
 
 def _to_grid(grid, who):
-    """2 次元リストを「幅・高さ・1 列に並べた数値」に直す。"""
+    """行のリスト（リストのリスト）を「幅・行数・1 列に並べた数値」に直す。"""
     try:
         h = len(grid)
     except TypeError:
-        raise TypeError(f"{who} には 2 次元のリスト（行のリスト）を渡してください。") from None
+        raise TypeError(f"{who} には、行ごとのリストを並べたリスト（リストのリスト）を渡してください。") from None
     if h == 0:
         raise ValueError(f"{who} に渡したリストが空です。")
     buf = array.array("f")
@@ -134,28 +133,10 @@ def _to_grid(grid, who):
     return w, h, buf
 
 
-def heatmap(grid, label="", lo=None, hi=None):
-    """2 次元リストを、上から見た白黒の地図として描く（白いほど値が大きい）。
-
-    lo, hi を指定すると、黒と白に対応する値を固定できる（省略すると最小値〜最大値）。
-    """
-    if _counts["heatmap"] >= MAX_MAPS:
-        raise RuntimeError(f"heatmap() は 1 回の実行で {MAX_MAPS} 枚までです。")
-    w, h, buf = _to_grid(grid, "heatmap()")
-    for name, v in (("lo", lo), ("hi", hi)):
-        if v is not None and not _is_number(v):
-            raise TypeError(f"heatmap() の {name} は数値にしてください。")
-    if lo is not None and hi is not None and hi <= lo:
-        raise ValueError("heatmap() は lo < hi になるようにしてください。")
-    _counts["heatmap"] += 1
-    meta = {"label": str(label), "w": w, "h": h, "lo": lo, "hi": hi}
-    _emit("heatmap", json.dumps(meta, ensure_ascii=False), buf, None)
-
-
 def terrain(heights, blocks=None, sea=None, colors=None):
-    """2 次元リストの高さから 3D の地形を描く。高さの単位は「ブロック何個分」。
+    """行ごとの高さのリストから、ブロックを積んだ 3D の地形を描く。高さの単位は「ブロック何個分」。
 
-    blocks: 高さと同じ形の 2 次元リスト。マスごとに、いちばん上のブロックの種類を
+    blocks: 高さと同じ形のリスト。マスごとに、いちばん上のブロックの種類を
             名前（"grass" など）か色コード "#rrggbb" で指定する（colors= と書いても同じ）。
     sea: 海面の高さ（指定すると、その高さまで半透明の水が入る）
     """
@@ -174,7 +155,7 @@ def terrain(heights, blocks=None, sea=None, colors=None):
         try:
             rows = len(colors)
         except TypeError:
-            raise TypeError("terrain() の blocks には 2 次元のリストを渡してください。") from None
+            raise TypeError("terrain() の blocks には、高さと同じ形のリスト（リストのリスト）を渡してください。") from None
         if rows != h:
             raise ValueError(f"terrain(): blocks の行数（{rows}）が高さの行数（{h}）と違います。")
         for r, row in enumerate(colors):
@@ -209,7 +190,7 @@ _HINTS = {
     "AttributeError": "その値では使えない機能（.の後ろの名前）を呼び出しています。つづりを確認しましょう。",
     "RecursionError": "関数が自分自身を呼び出し続けて止まらなくなっています。",
     "ModuleNotFoundError": "その名前のモジュールは、この教材の Python には入っていません。",
-    "MemoryError": "メモリが足りなくなりました。リストや地図の大きさを小さくしてみましょう。",
+    "MemoryError": "メモリが足りなくなりました。リストや地形の大きさを小さくしてみましょう。",
 }
 
 
@@ -305,11 +286,9 @@ def _run(code, params_json):
     _params = json.loads(params_json)
     _sliders.clear()
     _counts["plot"] = 0
-    _counts["heatmap"] = 0
     # エラー表示で「何行目のどのコードか」を出せるように、ソースを登録しておく
     linecache.cache[USER_FILE] = (len(code), None, code.splitlines(True), USER_FILE)
-    scope = {"__name__": "__main__", "slider": slider, "plot": plot,
-             "heatmap": heatmap, "terrain": terrain}
+    scope = {"__name__": "__main__", "slider": slider, "plot": plot, "terrain": terrain}
     error = None
     try:
         exec(compile(code, USER_FILE, "exec"), scope)

@@ -128,7 +128,7 @@ export function initBench({ runner, loadTerrain, onBusy }) {
       '',
       '## 項目の意味',
       '',
-      '- Python: py/bench.py（2 次元パーリンノイズのオクターブ合成）を Pyodide で実行した時間。データの受け渡し時間は含まない。',
+      '- Python: py/bench.py（1 次元パーリンノイズを 6 つの向きに重ねて地形の高さを作る。ステップ 6 と同じ）を Pyodide で実行した時間。データの受け渡し時間は含まない。',
       '- 受け渡し: Python の配列を JavaScript の Float32Array にコピーする時間。',
       '- 往復: 画面側が実行を依頼してから結果を受け取るまでの時間（Python + 受け渡し + スレッド間通信）。',
       '- JS: 同じアルゴリズムを JavaScript で実行した時間（js/noise-ref.js）。25 ms 以上になるまでくり返し、1 回あたりの時間を求めている。',

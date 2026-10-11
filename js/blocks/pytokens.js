@@ -16,7 +16,7 @@ export const KEYWORDS = new Set([
 ]);
 export const BUILTINS = new Set([
   'abs', 'all', 'any', 'bool', 'dict', 'enumerate', 'float', 'int', 'len', 'list', 'max', 'min', 'print', 'range',
-  'round', 'set', 'sorted', 'str', 'sum', 'tuple', 'zip', 'slider', 'plot', 'heatmap', 'terrain',
+  'round', 'set', 'sorted', 'str', 'sum', 'tuple', 'zip', 'slider', 'plot', 'terrain',
 ]);
 
 // その場で書き換えられる数値（10 進の整数・小数。符号つきも可）

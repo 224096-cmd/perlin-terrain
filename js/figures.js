@@ -108,35 +108,42 @@ function octaves() {
   return svg(560, 215, s, '細かさの違うノイズを 3 枚重ねて合計する図');
 }
 
-// ---- ステップ 6: 4 つの角の矢印 ----
-function corners() {
-  const x0 = 60, y0 = 30, cell = 130;
-  const arrows = [[0.8, 0.6], [-0.5, 0.86], [0.95, -0.3], [-0.7, -0.7]];
-  const P = [0.62, 0.38];
-  const px = x0 + P[0] * cell, py = y0 + P[1] * cell;
-  let s = '<defs><marker id="figArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="fg-fill-b"/></marker></defs>';
-  // まわりの方眼
-  for (let k = 0; k <= 1; k++) {
-    s += `<line x1="${x0 + k * cell}" y1="${y0 - 20}" x2="${x0 + k * cell}" y2="${y0 + cell + 20}" class="fg-axis"/>`;
+// ---- ステップ 6: 向きに沿って測った位置 ----
+function directions() {
+  const x0 = 40, y0 = 34, side = 140;
+  const angle = (32 * Math.PI) / 180;
+  const c = Math.cos(angle), sn = Math.sin(angle);
+  const P = [0.74, 0.30];                         // 点 (x, z)（地面の中での位置 0〜1）
+  const proj = P[0] * c + P[1] * sn;              // 向きに沿って測った位置 p
+  const px = x0 + P[0] * side, py = y0 + P[1] * side;
+  const fx = x0 + proj * c * side, fy = y0 + proj * sn * side;
+  let s = '<defs><marker id="figArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="fg-fill-b"/></marker>';
+  s += `<clipPath id="figGround"><rect x="${x0}" y="${y0}" width="${side}" height="${side}"/></clipPath></defs>`;
+  // p が同じになる線（向きに直角な線）。この線の上では、ノイズの高さも同じ
+  let stripes = '';
+  for (let k = 1; k <= 7; k++) {
+    const t = k * 0.2;
+    const cx = x0 + t * c * side, cy = y0 + t * sn * side;
+    stripes += `<line x1="${f1(cx - sn * 300)}" y1="${f1(cy + c * 300)}" x2="${f1(cx + sn * 300)}" y2="${f1(cy - c * 300)}" class="fg-axis"/>`;
   }
-  for (let k = 0; k <= 1; k++) {
-    s += `<line x1="${x0 - 40}" y1="${y0 + k * cell}" x2="${x0 + cell + 40}" y2="${y0 + k * cell}" class="fg-axis"/>`;
-  }
-  s += `<rect x="${x0}" y="${y0}" width="${cell}" height="${cell}" class="fg-frame"/>`;
-  [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([cx, cy], k) => {
-    const gx = x0 + cx * cell, gy = y0 + cy * cell;
-    s += `<line x1="${gx}" y1="${gy}" x2="${px}" y2="${py}" class="fg-dash"/>`;
-    s += `<line x1="${gx}" y1="${gy}" x2="${f1(gx + arrows[k][0] * 38)}" y2="${f1(gy + arrows[k][1] * 38)}" class="fg-line-b" marker-end="url(#figArrow)"/>`;
-    s += `<circle cx="${gx}" cy="${gy}" r="5" class="fg-dot-b"/>`;
-  });
-  s += `<circle cx="${px}" cy="${py}" r="6" class="fg-dot-a"/>`;
-  s += text(px + 13, py + 5, '点 (x, y)', 'fg-text');
-  const tx = x0 + cell + 70;
-  s += text(tx, 46, 'オレンジの矢印: 格子点ごとに', 'fg-small') + text(tx, 64, '乱数で決めた向き', 'fg-small');
-  s += text(tx, 92, '点線: 格子点から点への向き', 'fg-small');
-  s += text(tx, 120, '矢印と点線の向きが近い角ほど、', 'fg-small') + text(tx, 138, 'その点を高く押し上げる（内積）。', 'fg-small');
-  s += text(tx, 166, '4 つの角の分を fade で混ぜる。', 'fg-small');
-  return svg(560, 190, s, '点を囲む 4 つの格子点の矢印から高さを決める図');
+  s += `<g clip-path="url(#figGround)">${stripes}</g>`;
+  s += `<rect x="${x0}" y="${y0}" width="${side}" height="${side}" class="fg-frame"/>`;
+  s += `<line x1="${x0}" y1="${y0}" x2="${f1(x0 + c * side * 1.12)}" y2="${f1(y0 + sn * side * 1.12)}" class="fg-line-b" marker-end="url(#figArrow)"/>`;
+  s += `<line x1="${f1(px)}" y1="${f1(py)}" x2="${f1(fx)}" y2="${f1(fy)}" class="fg-dash"/>`;
+  s += `<line x1="${x0}" y1="${y0}" x2="${f1(fx)}" y2="${f1(fy)}" class="fg-line-a"/>`;
+  s += `<circle cx="${x0}" cy="${y0}" r="4" class="fg-dot-b"/>`;
+  s += `<circle cx="${f1(px)}" cy="${f1(py)}" r="6" class="fg-dot-a"/>`;
+  s += text(px + 10, py - 6, '場所 (x, z)', 'fg-text');
+  s += text((x0 + fx) / 2 - 4, (y0 + fy) / 2 + 20, 'p', 'fg-text', 'middle');
+  s += text(x0 + side / 2, y0 - 12, '横（x）', 'fg-small', 'middle');
+  s += `<text x="${x0 - 12}" y="${y0 + side / 2}" class="fg-small" text-anchor="middle" transform="rotate(-90 ${x0 - 12} ${y0 + side / 2})">奥行き（z）</text>`;
+  s += text(x0, y0 + side + 20, '地面を真上から見た図', 'fg-small');
+  const tx = x0 + side + 78;
+  s += text(tx, 50, 'オレンジの矢印: 重ねる向きの 1 本', 'fg-small');
+  s += text(tx, 78, '青い線の長さ p: 場所 (x, z) を、', 'fg-small') + text(tx, 96, 'その向きに沿って測った位置', 'fg-small');
+  s += text(tx, 124, 'この p で 1 次元のノイズを読む。', 'fg-small');
+  s += text(tx, 152, '向きに直角な線（うすい線）の上は', 'fg-small') + text(tx, 170, 'p が同じなので、高さも同じになる。', 'fg-small');
+  return svg(560, 200, s, '場所を、ある向きに沿って測った位置 p に直して、1 次元のノイズを読む図');
 }
 
 // ---- ステップ 7: 高さからブロックを決める ----
@@ -178,42 +185,38 @@ function columns() {
   return svg(560, 214, s, '高さによってブロックの種類を決め、海面より低い所を水で満たす図');
 }
 
-// ---- ステップ 8: ノイズ × マスク = 島 ----
-function mask() {
-  const n = 16, cell = 8;
-  // 図用の簡単なノイズ（教材本体と同じ考え方の 2 次元パーリンノイズ）
-  const ang = (ix, iy) => {
-    let v = (ix * 374761393 + iy * 668265263) | 0;
-    v = Math.imul(v ^ (v >>> 13), 1274126177);
-    return (((v ^ (v >>> 16)) >>> 0) / 4294967295) * Math.PI * 2;
+// ---- ステップ 8: ノイズ × マスク = 島（島の真ん中を横に切った断面） ----
+function maskProfile() {
+  const g = [0.7, -0.5, 0.8, -0.3, 0.6, -0.9, 0.4, 0.5, -0.7, 0.6, -0.2, 0.8, -0.6, 0.3, -0.4, 0.7, -0.5, 0.2];
+  const perlin = (x) => {
+    const i = Math.floor(x) % (g.length - 1);
+    const t = x - Math.floor(x);
+    return lerp(g[i] * t, g[i + 1] * (t - 1), fade(t)) * 2;
   };
-  const corner = (ix, iy, x, y) => Math.cos(ang(ix, iy)) * (x - ix) + Math.sin(ang(ix, iy)) * (y - iy);
-  const perlin2 = (x, y) => {
-    const ix = Math.floor(x), iy = Math.floor(y);
-    const u = fade(x - ix), v = fade(y - iy);
-    return lerp(lerp(corner(ix, iy, x, y), corner(ix + 1, iy, x, y), u), lerp(corner(ix, iy + 1, x, y), corner(ix + 1, iy + 1, x, y), u), v);
-  };
-  const noise = (i, j) => Math.min(1, Math.max(0, 0.5 + 0.9 * (perlin2(i / n * 3 + 5.2, j / n * 3 + 1.7) + 0.5 * perlin2(i / n * 6 + 9.1, j / n * 6 + 4.4))));
-  const maskAt = (i, j) => {
-    const dx = (i - n / 2 + 0.5) / (n / 2), dy = (j - n / 2 + 0.5) / (n / 2);
-    return Math.max(0, 1 - (dx * dx + dy * dy));
-  };
-  const grid = (x0, y0, fn) => {
-    let g = '';
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        const c = Math.round(fn(i, j) * 255);
-        g += `<rect x="${x0 + i * cell}" y="${y0 + j * cell}" width="${cell + 0.3}" height="${cell + 0.3}" fill="rgb(${c},${c},${c})"/>`;
-      }
+  const noise = (u) => Math.min(1, Math.max(0, 0.55 + 0.5 * (perlin(u * 3 + 0.4) + 0.5 * perlin(u * 6 + 5.3))));
+  const maskAt = (u) => Math.max(0, 1 - (2 * u - 1) ** 2);
+  const rows = [
+    { label: 'ノイズ', sub: '0 〜 1 に直したもの', f: noise, cls: 'fg-line-a' },
+    { label: '× マスク', sub: '中心が 1、端が 0', f: maskAt, cls: 'fg-line-b' },
+    { label: '＝ 島の高さ', sub: '端が必ず低くなる', f: (u) => noise(u) * maskAt(u), cls: 'fg-line-ink' },
+  ];
+  const x0 = 170, w = 370, rowH = 62, amp = 40;
+  let s = '';
+  rows.forEach((r, k) => {
+    const base = 52 + k * rowH;
+    const pts = [];
+    for (let p = 0; p <= 180; p++) pts.push([x0 + (p / 180) * w, base - r.f(p / 180) * amp]);
+    s += `<line x1="${x0}" y1="${base}" x2="${x0 + w}" y2="${base}" class="fg-axis"/>`;
+    s += `<path d="${path(pts)}" class="${r.cls}"/>`;
+    s += text(12, base - 20, r.label, 'fg-text') + text(12, base - 3, r.sub, 'fg-small');
+    if (k === 2) {
+      const sea = base - 0.16 * amp;
+      s += `<line x1="${x0}" y1="${f1(sea)}" x2="${x0 + w}" y2="${f1(sea)}" class="fg-dash"/>`;
+      s += text(x0 + w, sea - 5, '海面', 'fg-small', 'end');
     }
-    return g + `<rect x="${x0}" y="${y0}" width="${n * cell}" height="${n * cell}" class="fg-frame"/>`;
-  };
-  const y0 = 34, w = n * cell;
-  const xs = [20, 20 + w + 56, 20 + (w + 56) * 2];
-  let s = grid(xs[0], y0, noise) + grid(xs[1], y0, maskAt) + grid(xs[2], y0, (i, j) => noise(i, j) * maskAt(i, j));
-  s += text(xs[0] + w + 28, y0 + w / 2 + 8, '×', 'fg-big', 'middle') + text(xs[1] + w + 28, y0 + w / 2 + 8, '＝', 'fg-big', 'middle');
-  s += text(xs[0] + w / 2, 22, 'ノイズ', 'fg-text', 'middle') + text(xs[1] + w / 2, 22, 'マスク（中心が 1、端が 0）', 'fg-text', 'middle') + text(xs[2] + w / 2, 22, '島の高さ', 'fg-text', 'middle');
-  return svg(560, 176, s, 'ノイズに島の形のマスクを掛けると、端が低い島の高さになる図');
+  });
+  s += text(x0, 208, '島の真ん中を横に切った断面（左端から右端まで）', 'fg-small');
+  return svg(560, 218, s, 'ノイズにマスクを掛けると、端が低く中央が高い島の断面になる図');
 }
 
-export const FIGURES = { interpolate, slopes, octaves, corners, columns, mask };
+export const FIGURES = { interpolate, slopes, octaves, directions, columns, maskProfile };
