@@ -47,15 +47,11 @@
     </header>
 
     <div class="lesson-text">
-      <div class="lesson-main">
-        <div class="lesson-intro" id="lessonIntro"></div>
+      <div class="lesson-intro" id="lessonIntro"></div>
+      <div class="lesson-aside">
         <figure class="lesson-figure" id="lessonFigure" hidden></figure>
         <dl class="lesson-terms" id="lessonTerms"></dl>
       </div>
-      <aside class="lesson-side">
-        <h2>やってみよう</h2>
-        <ol class="lesson-tasks" id="lessonTasks"></ol>
-      </aside>
     </div>
 
     <aside class="guide" id="guide" hidden>
@@ -68,6 +64,21 @@
       </ul>
       <button type="button" class="btn small" id="guideClose">分かった</button>
     </aside>
+
+    <section class="taskcard" aria-label="やってみよう">
+      <div class="taskcard-head">
+        <h2>やってみよう</h2>
+        <div class="task-chips" id="taskChips" role="group" aria-label="課題を選ぶ"></div>
+      </div>
+      <div class="taskcard-body">
+        <p class="task-q" id="taskQ"></p>
+        <label class="task-done"><input type="checkbox" id="taskDone"> やった</label>
+      </div>
+      <details class="task-a" id="taskA">
+        <summary>解説を見る</summary>
+        <p id="taskAText"></p>
+      </details>
+    </section>
 
     <div class="workbench">
       <section class="panel code-panel" aria-label="Python のコード">
@@ -116,10 +127,6 @@
         <div class="out-block" id="terrainBlock" hidden>
           <div class="out-head">
             <h2>3D の地形</h2>
-            <div class="segmented" role="group" aria-label="地形の見た目">
-              <button type="button" id="modeSmooth" aria-pressed="true">なめらか</button>
-              <button type="button" id="modeBlocks" aria-pressed="false">ブロック</button>
-            </div>
           </div>
           <div class="terrain" id="terrain"></div>
           <div class="terrain-tools">
@@ -176,7 +183,7 @@
       <button type="button" class="btn" id="benchJson">JSON で保存</button>
       <button type="button" class="btn" id="benchMd">Markdown で保存</button>
     </div>
-    <p class="note">「Python 生成」は Python での計算時間、「受け渡し」は結果を画面側へ渡す時間、「JavaScript 生成」は同じ計算を JavaScript で行った時間、「3D」は立体の形を作って描き終えるまでの時間です。</p>
+    <p class="note">「Python 生成」は Python での計算時間、「受け渡し」は結果を画面側へ渡す時間、「JavaScript 生成」は同じ計算を JavaScript で行った時間、「3D 表示」はブロックを並べて描き終えるまでの時間です。</p>
   </section>
 
   <!-- ===== 記録 ===== -->

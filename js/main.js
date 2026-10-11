@@ -22,7 +22,7 @@ const store = {
   remove(key) { try { localStorage.removeItem(key); } catch { /* 同上 */ } },
   json(key, fallback) { try { return JSON.parse(this.get(key)) ?? fallback; } catch { return fallback; } },
 };
-const CODE_KEY = 'perlinTerrain.code2.';      // 書き換えたコードの保存先（ステップごと）
+const CODE_KEY = 'perlinTerrain.code3.';      // 書き換えたコードの保存先（ステップごと）
 
 $('version').textContent = 'v' + APP_VERSION;
 
@@ -35,7 +35,6 @@ let terrainModule = null;       // 3D 表示のプログラムは、最初に必
 const loadTerrain = () => (terrainModule ??= import('./views/terrain3d.js'));
 let terrainView = null;
 let terrainFailed = false;
-let terrainMode = 'smooth';
 
 const done = new Set(store.json('perlinTerrain.done', []));
 const taskChecks = store.json('perlinTerrain.tasks', {});
@@ -230,23 +229,43 @@ $('guideClose').addEventListener('click', () => {
 // ---------- ステップの表示 ----------
 const trail = buildTrail($('trail'), LESSONS, (i) => openLesson(i, true));
 
-function renderTasks(lesson) {
-  const checks = taskChecks[lesson.id] || [];
-  $('lessonTasks').replaceChildren(...lesson.tasks.map((task, k) => {
-    const box = el('input', { type: 'checkbox', 'aria-label': 'この課題をやった' });
-    box.checked = !!checks[k];
-    box.addEventListener('change', () => {
-      const list = (taskChecks[lesson.id] ||= []);
-      list[k] = box.checked;
-      store.set('perlinTerrain.tasks', JSON.stringify(taskChecks));
-      logger.add('task_check', lesson.id, { detail: `task${k + 1}=${box.checked ? 1 : 0}` });
-    });
-    return el('li', {}, [
-      el('div', { class: 'task-q' }, [el('span', { html: task.q }), el('label', { class: 'task-done' }, [box, 'やった'])]),
-      el('details', { class: 'task-a' }, [el('summary', { text: '解説を見る' }), el('p', { html: task.a })]),
-    ]);
-  }));
+// やってみよう: 課題を 1 つずつ表示する（番号で切り替え）。コードと結果のすぐ上に置く。
+let taskIndex = 0;
+
+function renderTasks(lesson, index = null) {
+  const checks = (taskChecks[lesson.id] ||= []);
+  if (index === null) {
+    // 最初は、まだ「やった」が付いていない最初の課題を出す
+    const firstOpen = lesson.tasks.findIndex((_, k) => !checks[k]);
+    index = firstOpen >= 0 ? firstOpen : 0;
+  }
+  taskIndex = index;
+  $('taskChips').replaceChildren(...lesson.tasks.map((_, k) => el('button', {
+    type: 'button',
+    class: 'task-chip' + (checks[k] ? ' done' : ''),
+    'aria-pressed': String(k === taskIndex),
+    'aria-label': `課題 ${k + 1}${checks[k] ? '（やった）' : ''}`,
+    text: String(k + 1),
+    onclick: () => renderTasks(lesson, k),
+  })));
+  const task = lesson.tasks[taskIndex];
+  $('taskQ').innerHTML = `<b class="task-no">課題 ${taskIndex + 1}</b>${task.q}`;
+  $('taskAText').innerHTML = task.a;
+  $('taskA').open = false;
+  $('taskDone').checked = !!checks[taskIndex];
 }
+
+$('taskDone').addEventListener('change', (ev) => {
+  const lesson = LESSONS[lessonIndex];
+  const list = (taskChecks[lesson.id] ||= []);
+  list[taskIndex] = ev.target.checked;
+  store.set('perlinTerrain.tasks', JSON.stringify(taskChecks));
+  logger.add('task_check', lesson.id, { detail: `task${taskIndex + 1}=${ev.target.checked ? 1 : 0}` });
+  $('taskChips').children[taskIndex]?.classList.toggle('done', ev.target.checked);
+});
+$('taskA').addEventListener('toggle', (ev) => {
+  if (ev.target.open) logger.add('task_answer', LESSONS[lessonIndex].id, { detail: `task${taskIndex + 1}` });
+});
 
 function renderPalette(lesson) {
   const items = (lesson.snippets || []).map((sn) => {
@@ -300,7 +319,6 @@ async function openLesson(index, byUser = false) {
   showConsole([]);
   $('runStats').hidden = true;
   setRunNote('idle', runner.state === 'loading' ? 'Python の準備ができると、ここに結果が表示されます。' : '実行しています…');
-  if (lesson.view3d) setTerrainMode(lesson.view3d, false);
   blockEd.setMeta({ fold: lesson.fold, focus: lesson.focus });
 
   let starter;
@@ -568,7 +586,6 @@ async function showTerrain(data) {
     try {
       const { TerrainView } = await loadTerrain();
       terrainView = new TerrainView($('terrain'));
-      terrainView.mode = terrainMode;
     } catch (err) {
       terrainFailed = true;
       $('terrain').hidden = true;
@@ -582,19 +599,6 @@ async function showTerrain(data) {
   note.textContent = terrainView.notice;
 }
 
-function setTerrainMode(mode, byUser) {
-  terrainMode = mode;
-  $('modeSmooth').setAttribute('aria-pressed', String(mode === 'smooth'));
-  $('modeBlocks').setAttribute('aria-pressed', String(mode === 'blocks'));
-  if (terrainView) {
-    terrainView.setMode(mode);
-    $('terrainNote').hidden = !terrainView.notice;
-    $('terrainNote').textContent = terrainView.notice;
-  }
-  if (byUser) logger.add('view_mode', LESSONS[lessonIndex].id, { detail: mode });
-}
-$('modeSmooth').addEventListener('click', () => setTerrainMode('smooth', true));
-$('modeBlocks').addEventListener('click', () => setTerrainMode('blocks', true));
 $('autoRotate').addEventListener('change', (ev) => terrainView?.setAutoRotate(ev.target.checked));
 $('resetView').addEventListener('click', () => terrainView?.resetCamera());
 $('ghostToggle').addEventListener('change', (ev) => plotView.setGhostVisible(ev.target.checked));

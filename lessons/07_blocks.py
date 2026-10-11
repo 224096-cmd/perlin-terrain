@@ -1,4 +1,4 @@
-# ステップ 9: ブロックの世界（低い所は水、高い所は雪）
+# ステップ 7: ブロックの世界（低い所は水、高い所は雪）
 import math
 import random
 
@@ -44,9 +44,9 @@ def perlin2(x, y):
     iy = math.floor(y)
     u = fade(x - ix)
     v = fade(y - iy)
-    top = lerp(corner(ix, iy, x, y), corner(ix + 1, iy, x, y), u)
-    bottom = lerp(corner(ix, iy + 1, x, y), corner(ix + 1, iy + 1, x, y), u)
-    return lerp(top, bottom, v)
+    near = lerp(corner(ix, iy, x, y), corner(ix + 1, iy, x, y), u)
+    far = lerp(corner(ix, iy + 1, x, y), corner(ix + 1, iy + 1, x, y), u)
+    return lerp(near, far, v)
 
 
 def fbm(x, y):

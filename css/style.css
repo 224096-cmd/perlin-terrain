@@ -226,7 +226,7 @@ a { color: var(--sea); }
 .lesson-intro p + p { margin-top: 0.8em; }
 .lesson-intro b { color: var(--contour); }
 
-.lesson-figure { margin: 18px 0 4px; max-width: 40em; }
+.lesson-figure { margin: 0 0 14px; max-width: 40em; }
 .fig { display: block; width: 100%; height: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
 .fig text { font-family: var(--font-body); fill: var(--ink); }
 .fig .fg-title { font-size: 13px; font-weight: 700; }
@@ -251,20 +251,45 @@ a { color: var(--sea); }
 .fig .bk-stone { fill: #8c8f92; }
 .fig rect.bk-snow { fill: #f2f5f7; stroke: var(--ink-2); }
 
-.lesson-terms { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); max-width: 40em; font-size: 0.93rem; }
+.lesson-terms { max-width: 40em; font-size: 0.93rem; }
 .lesson-terms dt { font-weight: 700; margin-top: 8px; }
 .lesson-terms dt:first-child { margin-top: 0; }
 .lesson-terms dd { color: var(--ink-2); }
 
-.lesson-side h2 { font-size: 1rem; margin-bottom: 6px; }
-.lesson-tasks { padding-left: 1.5em; }
-.lesson-tasks > li { margin-bottom: 0.9em; }
-.lesson-tasks > li::marker { color: var(--contour); font-weight: 700; }
-.task-q { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
-.task-done { flex: none; display: flex; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--ink-2); cursor: pointer; white-space: nowrap; margin-top: 3px; }
-.task-done input { accent-color: var(--changed); width: 16px; height: 16px; }
-.task-a summary { cursor: pointer; font-size: 0.85rem; color: var(--sea); width: fit-content; }
-.task-a p { margin-top: 4px; padding: 8px 12px; background: var(--surface); border-left: 3px solid var(--contour); font-size: 0.93rem; }
+.task-q code, .task-a code {
+  font-family: var(--font-code); font-size: 0.92em;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* やってみよう（課題カード）: コードと結果のすぐ上に置く */
+.taskcard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--contour);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.taskcard-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-bottom: 8px; }
+.taskcard-head h2 { font-size: 1rem; }
+.task-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.task-chip {
+  width: 30px; height: 30px; padding: 0; border-radius: 50%;
+  border: 2px solid var(--contour); background: var(--surface); color: var(--ink);
+  font-size: 0.85rem; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.task-chip:hover { background: var(--sea-soft); }
+.task-chip.done { background: var(--contour); color: var(--surface); }
+.task-chip[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink); }
+.taskcard-body { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
+.task-q { flex: 1; min-width: 0; }
+.task-no { color: var(--contour); margin-right: 10px; white-space: nowrap; }
+.task-done { flex: none; display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer; white-space: nowrap; padding: 2px 10px; border: 1px solid var(--line); border-radius: 4px; }
+.task-done input { accent-color: var(--changed); width: 16px; height: 16px; margin: 0; }
+.task-a { margin-top: 6px; }
+.task-a summary { cursor: pointer; font-size: 0.9rem; color: var(--sea); width: fit-content; }
+.task-a p { margin-top: 6px; padding: 8px 12px; background: var(--code-bg); border-left: 3px solid var(--contour); font-size: 0.95rem; max-width: 60em; }
 .lesson-text code {
   background: var(--code-bg);
   border: 1px solid var(--line);
@@ -306,7 +331,7 @@ a { color: var(--sea); }
   align-items: start;
 }
 @media (min-width: 960px) {
-  .lesson-text { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+  .lesson-text { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .workbench { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 
@@ -325,7 +350,11 @@ a { color: var(--sea); }
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
 }
+.code-panel { container-type: inline-size; }
 .toolbar-end { margin-left: auto; display: flex; flex-wrap: wrap; gap: 2px; }
+@container (max-width: 700px) {
+  .toolbar-end { margin-left: -8px; flex-basis: 100%; }
+}
 .toolbar .segmented button { padding: 5px 14px; font-size: 0.95rem; }
 .auto-run { margin-right: 0; }
 [hidden] { display: none !important; }
@@ -345,19 +374,22 @@ a { color: var(--sea); }
 
 .editor-note { padding: 8px 14px; background: var(--err-soft); border-bottom: 1px solid var(--line); font-size: 0.9rem; }
 
-/* ---------- ブロック編集 ---------- */
+/* ---------- ブロック編集 ----------
+   1 行の並び: [つまみ 18px][開閉 16px][コード][目印][道具（右端に固定）]
+   どの行も同じ並びにして、同じ深さの行のコードが同じ位置から始まるようにする。 */
 .block-editor { background: var(--code-bg); }
 .blk-scroll {
   position: relative;
   max-height: clamp(360px, 70vh, 760px);
   overflow: auto;
-  padding: 10px 10px 16px 40px;
+  padding: 10px 0 16px 40px;
   font-family: var(--font-code);
   font-size: 14px;
   line-height: 1.5;
 }
 .blk-list { display: flex; flex-direction: column; gap: 2px; min-width: max-content; }
-.blk { --cat: var(--cat-other); border-left: 3px solid var(--cat); border-radius: 3px; background: var(--surface); }
+.blk-root { padding-right: 10px; }
+.blk { --cat: var(--cat-other); margin-top: calc(var(--gap, 0) * 5px); border-left: 3px solid var(--cat); border-radius: 3px; background: var(--surface); }
 .blk.cat-def { --cat: var(--cat-def); }
 .blk.cat-loop { --cat: var(--cat-loop); }
 .blk.cat-cond { --cat: var(--cat-cond); }
@@ -366,16 +398,15 @@ a { color: var(--sea); }
 .blk.cat-flow { --cat: var(--cat-flow); }
 .blk.cat-comment { background: none; }
 .blk.is-pass { opacity: 0.55; }
-.blk { margin-top: calc(var(--gap, 0) * 5px); }
-.blk-note { color: var(--ink-2); font-family: var(--font-body); font-size: 12.5px; padding: 2px 8px 0 30px; white-space: normal; max-width: 60ch; }
-.blk-row { display: flex; align-items: center; gap: 4px; min-height: 26px; padding-right: 6px; border-radius: 0 3px 3px 0; }
+.blk-note { color: var(--ink-2); font-family: var(--font-body); font-size: 12.5px; line-height: 1.5; padding: 3px 8px 0 40px; white-space: normal; max-width: 64ch; }
+.blk-row { display: flex; align-items: center; min-height: 28px; border-radius: 0 3px 3px 0; }
 .blk-row::before {
   content: attr(data-line);
   position: absolute; left: 0; width: 30px;
-  text-align: right; font-size: 11px; color: var(--ink-2); opacity: 0.7;
+  text-align: right; font-family: var(--font-code); font-size: 11px; color: var(--ink-2); opacity: 0.7;
 }
 .blk-row.has-error { background: var(--err-soft); outline: 2px solid var(--err); outline-offset: -1px; }
-.blk-grip, .blk-grip-space { flex: none; width: 20px; align-self: stretch; }
+.blk-grip, .blk-grip-space { flex: none; width: 18px; align-self: stretch; }
 .blk-grip {
   display: flex; align-items: center; justify-content: center;
   border: 0; padding: 0; background: transparent; cursor: grab; touch-action: none; border-radius: 3px; color: var(--ink-2);
@@ -386,26 +417,30 @@ a { color: var(--sea); }
 }
 .blk-row:hover > .blk-grip, .blk-grip:focus-visible { background: var(--sea-soft); color: var(--ink); }
 .blk-row:hover > .blk-grip::before, .blk-grip:focus-visible::before { opacity: 1; }
-.blk-fold { flex: none; width: 18px; height: 22px; border: 0; padding: 0; background: none; cursor: pointer; color: var(--ink-2); font-size: 12px; }
+.blk-fold, .blk-fold-space { flex: none; width: 16px; margin-left: 2px; }
+.blk-fold { height: 22px; border: 0; padding: 0; background: none; cursor: pointer; color: var(--ink-2); font-size: 12px; line-height: 22px; text-align: center; }
 .blk-fold::before { content: "▾"; }
 .blk-fold[aria-expanded="false"]::before { content: "▸"; }
-.blk-code { font-family: inherit; white-space: pre; padding: 2px 0; }
-.blk-more { border: 0; background: none; color: var(--sea); cursor: pointer; font-family: var(--font-body); font-size: 12.5px; padding: 0 4px; white-space: nowrap; }
-.blk-body { margin: 0 0 0 20px; padding: 2px 0 2px 6px; border-left: 2px solid color-mix(in srgb, var(--cat) 45%, transparent); min-height: 26px; }
+.blk-code { flex: none; font-family: inherit; white-space: pre; padding: 3px 0; margin-left: 4px; }
+.blk-more { flex: none; border: 0; background: none; color: var(--sea); cursor: pointer; font-family: var(--font-body); font-size: 12.5px; padding: 0 6px; white-space: nowrap; }
+.blk-tag { flex: none; margin-left: 10px; font-family: var(--font-body); font-size: 11px; line-height: 1.4; color: var(--contour); white-space: nowrap; border: 1px solid var(--contour); border-radius: 3px; padding: 0 5px; background: var(--surface); }
+/* 中身: つまみの列の真下に縦線を引き、そこから一定の幅だけ字下げする */
+.blk-body { margin-left: 8px; padding: 2px 0 2px 16px; border-left: 2px solid color-mix(in srgb, var(--cat) 45%, transparent); min-height: 28px; }
 .blk.folded > .blk-body, .blk.folded > .blk-foot { display: none; }
-.blk-foot { height: 7px; }
+.blk-foot { height: 6px; }
 .blk.focus { box-shadow: inset 0 0 0 1px var(--contour); background: color-mix(in srgb, var(--contour) 7%, var(--surface)); }
-.blk.focus > .blk-row:first-of-type::after, .blk.focus > .blk-note + .blk-row::after {
-  content: "このステップで注目"; margin-left: 8px; font-family: var(--font-body); font-size: 11px; color: var(--contour); white-space: nowrap;
-}
 .blk.selected { outline: 2px solid var(--sea); outline-offset: 0; }
 .blk.dragging { opacity: 0.35; }
 .blk.just-added { animation: added 1.2s ease-out; }
 @keyframes added { from { background: var(--changed-soft); box-shadow: 0 0 0 2px var(--changed); } to { box-shadow: 0 0 0 2px transparent; } }
 
-.blk-tools { display: none; gap: 2px; margin-left: 8px; flex: none; }
-.blk-row:hover > .blk-tools, .blk.selected > .blk-row > .blk-tools, .blk-row:focus-within > .blk-tools { display: inline-flex; }
-.blk-tool { width: 24px; height: 22px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); padding: 0; cursor: pointer; font-size: 11px; line-height: 1; color: var(--ink-2); }
+/* 道具は行の右端に固定し、出したり消したりしても行の幅が変わらないようにする */
+.blk-tools {
+  display: inline-flex; gap: 2px; flex: none; margin-left: auto; padding: 0 6px 0 12px;
+  position: sticky; right: 0; visibility: hidden;
+}
+.blk-row:hover > .blk-tools, .blk.selected > .blk-row > .blk-tools, .blk-row:focus-within > .blk-tools { visibility: visible; }
+.blk-tool { width: 24px; height: 22px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); padding: 0; cursor: pointer; font-size: 11px; line-height: 20px; color: var(--ink-2); }
 .blk-tool:hover { border-color: var(--ink-2); color: var(--ink); }
 .blk-tool.t-up::before { content: "▲"; }
 .blk-tool.t-down::before { content: "▼"; }
@@ -414,14 +449,14 @@ a { color: var(--sea); }
 .blk-tool.t-del:hover { border-color: var(--err); color: var(--err); }
 
 .blk-num {
-  font: inherit; color: var(--contour); font-weight: 700; text-align: center;
+  font: inherit; line-height: 20px; color: var(--contour); font-weight: 700; text-align: center;
   border: 1px solid var(--contour); border-radius: 3px; background: var(--surface);
-  padding: 0 4px; margin: 0 1px; height: 22px; min-width: 22px; box-sizing: border-box;
+  padding: 0 4px; margin: -2px 1px; height: 22px; min-width: 22px; box-sizing: border-box; vertical-align: baseline;
 }
 .blk-num:hover { background: var(--sea-soft); }
 .blk-num:focus { outline: 2px solid var(--sea); outline-offset: 0; }
 .blk-num.invalid { border-color: var(--err); color: var(--err); background: var(--err-soft); }
-.blk-name-wrap { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--ok); border-radius: 3px; background: var(--surface); padding: 0 2px 0 4px; margin: 0 1px; height: 22px; vertical-align: middle; }
+.blk-name-wrap { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--ok); border-radius: 3px; background: var(--surface); padding: 0 2px 0 4px; margin: -2px 1px; height: 22px; box-sizing: border-box; vertical-align: middle; }
 .blk-swatch { width: 11px; height: 11px; border: 1px solid var(--ink-2); background: var(--sw, #999); }
 .blk-name-wrap[data-name="water"] { --sw: #3a80c4; }
 .blk-name-wrap[data-name="sand"] { --sw: #dccb8c; }
@@ -451,12 +486,11 @@ a { color: var(--sea); }
 body.dragging-block { cursor: grabbing; user-select: none; -webkit-user-select: none; }
 body.dragging-block * { cursor: grabbing !important; }
 @media (hover: none) {
-  .blk-row > .blk-tools { display: none; }
-  /* 指で操作する端末では、選んだブロックのすぐ下に道具を並べる（横に長い行でも届くように） */
-  .blk.selected > .blk-row { flex-wrap: wrap; }
-  .blk.selected > .blk-row > .blk-tools { display: flex; flex-basis: 100%; margin: 2px 0 4px 24px; }
-  .blk-tool { width: 32px; height: 28px; }
-  .blk-row { min-height: 32px; }
+  /* 指で操作する端末では、選んだブロックにだけ道具を出す */
+  .blk-row:hover > .blk-tools { visibility: hidden; }
+  .blk.selected > .blk-row > .blk-tools { visibility: visible; }
+  .blk-tool { width: 32px; height: 28px; line-height: 26px; }
+  .blk-row { min-height: 34px; }
   .blk-num, .blk-name-wrap { height: 26px; }
 }
 
@@ -552,8 +586,9 @@ body.dragging-block * { cursor: grabbing !important; }
 @keyframes ran { from { box-shadow: 0 0 0 3px var(--changed); } to { box-shadow: 0 0 0 3px transparent; } }
 .out-head .check { margin-left: auto; margin-right: 0; }
 .swatch.ghost { background: var(--ink-2); opacity: 0.5; height: 2px; }
-.terrain-hint { font-size: 0.8rem; color: var(--ink-2); margin-right: auto; }
-.terrain-tools .check { margin-right: 0; }
+/* 3D の下の操作: 1 行目に「自動で回す」とボタン、2 行目に操作の説明 */
+.terrain-tools .check { margin-right: auto; }
+.terrain-hint { order: 9; flex-basis: 100%; font-size: 0.8rem; color: var(--ink-2); }
 .out-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .out-head h2 { font-size: 1rem; }
 .note { font-size: 0.88rem; color: var(--ink-2); margin-top: 8px; }
@@ -642,6 +677,7 @@ body.dragging-block * { cursor: grabbing !important; }
 .segmented button:focus-visible { outline-offset: -3px; }
 
 .pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 28px; }
+.pager-btn:disabled { visibility: hidden; }
 .pager-btn { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 18px; min-width: 0; }
 .pager-btn:last-child { align-items: flex-end; text-align: right; }
 .pager-dir { font-size: 0.8rem; opacity: 0.85; font-weight: 400; }
@@ -691,6 +727,12 @@ body.dragging-block * { cursor: grabbing !important; }
 }
 
 @media (max-width: 640px) {
+  .guide { grid-template-columns: minmax(0, 1fr); }
+  .guide .btn { justify-self: start; margin-top: 6px; }
+  .taskcard-body { flex-direction: column; gap: 8px; }
+  /* 図は小さくしすぎず、横に送って見られるようにする */
+  .lesson-figure { overflow-x: auto; }
+  .lesson-figure .fig { min-width: 520px; }
   .topbar { padding: 8px 16px; }
   .tabpage { padding: 0 16px 40px; }
   .footer { padding: 16px; }

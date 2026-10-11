@@ -169,14 +169,18 @@ export class BlockEditor {
       } else {
         row.append(el('span', { class: 'blk-grip-space' }));
       }
+      // 開閉ボタンの場所は、中身を持たない行でも空けておく（同じ深さの行の文字の開始位置をそろえるため）
       if (cl.body && ci === 0) {
         row.append(el('button', {
           type: 'button', class: 'blk-fold', 'aria-expanded': String(!folded),
           'aria-label': folded ? '中身を開く' : '中身をたたむ', title: folded ? '中身を開く' : '中身をたたむ',
           onclick: () => this._toggleFold(block),
         }));
+      } else {
+        row.append(el('span', { class: 'blk-fold-space' }));
       }
       row.append(this._renderCode(cl));
+      if (ci === 0 && this._isFocus(block)) row.append(el('span', { class: 'blk-tag', text: 'このステップで注目' }));
       if (folded && ci === 0) {
         const count = allBlocks(block.clauses.flatMap((c) => c.body || [])).length;
         row.append(el('button', { type: 'button', class: 'blk-more', text: `… 中身 ${count} 個（開く）`, onclick: () => this._toggleFold(block) }));

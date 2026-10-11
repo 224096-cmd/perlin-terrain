@@ -1,5 +1,4 @@
-// 3D の地形表示（terrain() の表示先）。Three.js（WebGL）で描く。
-// 「なめらか」= 1 枚の面、「ブロック」= 立方体の集まり の 2 通りで表示できる。
+// 3D の地形表示（terrain() の表示先）。Three.js（WebGL）で、立方体のブロックを積んだ地形を描く。
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -116,7 +115,6 @@ function layerType(top, depth) {
 export class TerrainView {
   constructor(host) {
     this.host = host;
-    this.mode = 'smooth';
     this.data = null;
     this.notice = '';
     this._raf = 0;
@@ -185,13 +183,6 @@ export class TerrainView {
     this._autoRotate = on;
     this.controls.autoRotate = on;
     this.controls.autoRotateSpeed = 1.2;
-    this.requestRender();
-  }
-
-  setMode(mode) {
-    if (mode === this.mode) return;
-    this.mode = mode;
-    if (this.data) this._rebuild();
     this.requestRender();
   }
 
@@ -272,71 +263,8 @@ export class TerrainView {
   _rebuild() {
     this._clear();
     this.notice = '';
-    const bottom = this.mode === 'blocks' ? this._buildBlocks() : this._buildSmooth();
+    const bottom = this._buildBlocks();
     this._buildWater(bottom);
-  }
-
-  _buildSmooth() {
-    const { w, h } = this.data;
-    const hs = this.heights;
-    const bottom = this.min - Math.max(1, Math.max(w, h) * 0.04);
-    // 外周をぐるっと 1 周する点の番号（側面の壁を作るのに使う）
-    const rim = [];
-    for (let i = 0; i < w; i++) rim.push(i);
-    for (let j = 1; j < h; j++) rim.push(j * w + w - 1);
-    for (let i = w - 2; i >= 0; i--) rim.push((h - 1) * w + i);
-    for (let j = h - 2; j >= 1; j--) rim.push(j * w);
-    const wall = w > 1 && h > 1 ? rim.length : 0;
-
-    const top = w * h;
-    const pos = new Float32Array((top + wall * 2) * 3);
-    const col = new Float32Array((top + wall * 2) * 3);
-    col.set(this.cellRGB);
-    const px = (k) => (k % w) - (w - 1) / 2;
-    const pz = (k) => Math.floor(k / w) - (h - 1) / 2;
-    for (let k = 0; k < top; k++) {
-      pos[k * 3] = px(k);
-      pos[k * 3 + 1] = hs[k];
-      pos[k * 3 + 2] = pz(k);
-    }
-    const earth = new THREE.Color('#7a6650');
-    for (let r = 0; r < wall; r++) {
-      const k = rim[r];
-      const a = (top + r * 2) * 3;          // 壁の上の点
-      const b = a + 3;                      // 壁の下の点
-      pos[a] = pos[b] = px(k);
-      pos[a + 2] = pos[b + 2] = pz(k);
-      pos[a + 1] = hs[k];
-      pos[b + 1] = bottom;
-      col[a] = earth.r; col[a + 1] = earth.g; col[a + 2] = earth.b;
-      col[b] = earth.r * 0.7; col[b + 1] = earth.g * 0.7; col[b + 2] = earth.b * 0.7;
-    }
-
-    const quads = Math.max(0, (w - 1) * (h - 1));
-    const index = new Uint32Array((quads + wall) * 6);
-    let q = 0;
-    for (let j = 0; j < h - 1; j++) {
-      for (let i = 0; i < w - 1; i++) {
-        const a = j * w + i, b = a + 1, c = a + w, d = c + 1;
-        index[q++] = a; index[q++] = c; index[q++] = b;
-        index[q++] = b; index[q++] = c; index[q++] = d;
-      }
-    }
-    for (let r = 0; r < wall; r++) {
-      const a = top + r * 2, b = a + 1;
-      const c = top + ((r + 1) % wall) * 2, d = c + 1;
-      index[q++] = a; index[q++] = c; index[q++] = b;
-      index[q++] = b; index[q++] = c; index[q++] = d;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    geo.setIndex(new THREE.BufferAttribute(index, 1));
-    geo.computeVertexNormals();
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-    this.group.add(new THREE.Mesh(geo, mat));
-    this.stats = { mode: 'smooth', triangles: (quads + wall) * 2, cubes: 0 };
-    return bottom;
   }
 
   // マスごとの「いちばん上のブロックの種類」を決める
@@ -411,7 +339,7 @@ export class TerrainView {
       mesh.instanceColor = new THREE.InstancedBufferAttribute(col, 3);
       mesh.frustumCulled = false;
       this.group.add(mesh);
-      this.stats = { mode: 'blocks', triangles: n * 12, cubes: n };
+      this.stats = { triangles: n * 12, cubes: n };
       return base;
     }
 
@@ -460,19 +388,16 @@ export class TerrainView {
       b.mesh.instanceColor = new THREE.InstancedBufferAttribute(b.col, 3);
       b.mesh.instanceMatrix.needsUpdate = true;
     }
-    this.stats = { mode: 'blocks', triangles: count * 12, cubes: count };
+    this.stats = { triangles: count * 12, cubes: count };
     return base;
   }
 
   _buildWater(bottom) {
     if (this.sea === null) return;
     const { w, h } = this.data;
-    const blocks = this.mode === 'blocks';
-    const top = blocks ? Math.round(this.sea) - 0.12 : this.sea;
+    const top = Math.round(this.sea) - 0.12;      // ブロックの上の面と重ならないよう、少し低くする
     if (top <= bottom) return;
-    const sx = blocks ? w : w - 1;
-    const sz = blocks ? h : h - 1;
-    const geo = new THREE.BoxGeometry(sx - 0.02, top - bottom, sz - 0.02);
+    const geo = new THREE.BoxGeometry(w - 0.02, top - bottom, h - 0.02);
     const mat = new THREE.MeshLambertMaterial({ color: NAMED_COLORS.water, transparent: true, opacity: 0.62, depthWrite: false });
     const water = new THREE.Mesh(geo, mat);
     water.position.set(0, bottom + (top - bottom) / 2, 0);
@@ -480,13 +405,22 @@ export class TerrainView {
     this.group.add(water);
   }
 
+  // 地形全体が画面の中央に収まるように、視点を決め直す
   resetCamera() {
     if (!this.data) return;
-    const size = Math.max(this.data.w, this.data.h);
-    const mid = Math.min(Math.max((this.min + this.max) / 2, -size), size);
-    const tall = Math.min(Math.max(this.max - mid, 0), size);
-    this.controls.target.set(0, mid, 0);
-    this.camera.position.set(size * 1.05, mid + size * 0.8 + tall * 0.4, size * 1.35);
+    const { w, h } = this.data;
+    const size = Math.max(w, h);
+    const lo = Math.max(this.min - 1, -size * 2);
+    const hi = Math.min(Math.max(this.max, this.sea ?? -Infinity), size * 2);
+    const tall = Math.max(1, hi - lo);
+    // 地形を囲む箱がちょうど入る距離を求める（縦・横のうち、せまいほうの画角に合わせる）
+    const radius = 0.5 * Math.sqrt(w * w + h * h + tall * tall);
+    const vfov = (this.camera.fov * Math.PI) / 180;
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
+    const dist = (radius / Math.sin(Math.min(vfov, hfov) / 2)) * 0.9;
+    const dir = new THREE.Vector3(0.6, 0.62, 0.8).normalize();     // 右手前の斜め上から見下ろす
+    this.controls.target.set(0, lo + tall * 0.42, 0);
+    this.camera.position.copy(this.controls.target).addScaledVector(dir, dist);
     this.camera.near = Math.max(0.1, size / 200);
     this.camera.far = size * 40;
     this.camera.updateProjectionMatrix();
@@ -496,10 +430,9 @@ export class TerrainView {
     this.requestRender();
   }
 
-  // 計測用: データを指定の見た目で作り直して 1 回描き、かかった時間（ms）を返す
-  measure(d, mode) {
+  // 計測用: ブロックを作り直して 1 回描き、かかった時間（ms）を返す
+  measure(d) {
     const t = performance.now();
-    this.mode = mode;
     this.setData(d);
     this.renderNow();
     this.renderer.getContext().finish();   // GPU の描画が終わるまで待つ

@@ -1,5 +1,5 @@
 // 性能計測タブ。地形の大きさを変えながら、
-//   Python での生成時間 / データの受け渡し時間 / JavaScript での生成時間 / 3D 表示の時間
+//   Python での生成時間 / データの受け渡し時間 / JavaScript での生成時間 / 3D（ブロック）表示の時間
 // をくり返し測り、CSV / JSON / Markdown で書き出す。
 import { APP_NAME, APP_VERSION } from './version.js';
 import { generateJS } from './noise-ref.js';
@@ -7,7 +7,7 @@ import { deviceInfo, downloadText, el, fmtMs, mdTable, mean, round, sd, stamp, t
 
 const SIZES = [16, 32, 64, 128];
 const OCTAVES = 4;
-const TRIAL_COLUMNS = ['size', 'cells', 'octaves', 'trial', 'python_ms', 'transfer_ms', 'roundtrip_ms', 'js_ms', 'smooth_ms', 'blocks_ms'];
+const TRIAL_COLUMNS = ['size', 'cells', 'octaves', 'trial', 'python_ms', 'transfer_ms', 'roundtrip_ms', 'js_ms', 'blocks_ms'];
 
 const $ = (id) => document.getElementById(id);
 
@@ -72,7 +72,6 @@ export function initBench({ runner, loadTerrain, onBusy }) {
         roundtrip_mean_ms: round(mean(col('roundtrip_ms')), 2),
         js_mean_ms: round(mean(js), 3),
         python_per_js: js.length && mean(js) > 0 ? round(mean(py) / mean(js), 1) : null,
-        smooth_mean_ms: round(mean(col('smooth_ms')), 2),
         blocks_mean_ms: round(mean(col('blocks_ms')), 2),
       };
     }).filter(Boolean);
@@ -80,7 +79,7 @@ export function initBench({ runner, loadTerrain, onBusy }) {
 
   function showResult() {
     const s = result.summary;
-    const head = ['大きさ', 'マス数', 'Python 生成（平均 ± 標準偏差）', '最小〜最大', '受け渡し', 'JavaScript 生成', 'Python ÷ JS', '3D なめらか', '3D ブロック'];
+    const head = ['大きさ', 'マス数', 'Python 生成（平均 ± 標準偏差）', '最小〜最大', '受け渡し', 'JavaScript 生成', 'Python ÷ JS', '3D 表示'];
     $('benchTable').replaceChildren(el('table', { class: 'data' }, [
       el('thead', {}, el('tr', {}, head.map((h) => el('th', { scope: 'col', text: h })))),
       el('tbody', {}, s.map((r) => el('tr', {}, [
@@ -91,7 +90,6 @@ export function initBench({ runner, loadTerrain, onBusy }) {
         el('td', { text: fmtMs(r.transfer_mean_ms) }),
         el('td', { text: fmtMs(r.js_mean_ms) }),
         el('td', { text: r.python_per_js ? r.python_per_js + ' 倍' : '-' }),
-        el('td', { text: fmtMs(r.smooth_mean_ms) }),
         el('td', { text: fmtMs(r.blocks_mean_ms) }),
       ]))),
     ]));
@@ -123,9 +121,9 @@ export function initBench({ runner, loadTerrain, onBusy }) {
       `## 地形生成と表示の時間（オクターブ数 ${r.config.octaves}、各 ${r.config.repeats} 回）`,
       '',
       mdTable(
-        ['大きさ', 'マス数', 'Python 平均 (ms)', '標準偏差', '最小', '最大', '受け渡し (ms)', '往復 (ms)', 'JS 平均 (ms)', 'Python÷JS', '3D なめらか (ms)', '3D ブロック (ms)'],
+        ['大きさ', 'マス数', 'Python 平均 (ms)', '標準偏差', '最小', '最大', '受け渡し (ms)', '往復 (ms)', 'JS 平均 (ms)', 'Python÷JS', '3D 表示 (ms)'],
         r.summary.map((x) => [`${x.size}×${x.size}`, x.cells, x.python_mean_ms, x.python_sd_ms, x.python_min_ms, x.python_max_ms,
-          x.transfer_mean_ms, x.roundtrip_mean_ms, x.js_mean_ms, x.python_per_js ?? '-', x.smooth_mean_ms, x.blocks_mean_ms]),
+          x.transfer_mean_ms, x.roundtrip_mean_ms, x.js_mean_ms, x.python_per_js ?? '-', x.blocks_mean_ms]),
       ),
       '',
       '## 項目の意味',
@@ -134,7 +132,7 @@ export function initBench({ runner, loadTerrain, onBusy }) {
       '- 受け渡し: Python の配列を JavaScript の Float32Array にコピーする時間。',
       '- 往復: 画面側が実行を依頼してから結果を受け取るまでの時間（Python + 受け渡し + スレッド間通信）。',
       '- JS: 同じアルゴリズムを JavaScript で実行した時間（js/noise-ref.js）。25 ms 以上になるまでくり返し、1 回あたりの時間を求めている。',
-      '- 3D なめらか / ブロック: 形状データを作り、1 回描画し終わるまでの時間。',
+      '- 3D 表示: ブロックを並べ、1 回描画し終わるまでの時間。',
       '',
     ].join('\n');
   }
@@ -179,16 +177,12 @@ export function initBench({ runner, loadTerrain, onBusy }) {
           const t0 = performance.now();
           do { generateJS(size, OCTAVES); jsRuns += 1; } while (performance.now() - t0 < 25);
           const jsMs = (performance.now() - t0) / jsRuns;
-          let smoothMs = null, blocksMs = null;
-          if (view) {
-            smoothMs = view.measure(out, 'smooth');
-            blocksMs = view.measure(out, 'blocks');
-          }
+          const blocksMs = view ? view.measure(out) : null;
           trials.push({
             size, cells: size * size, octaves: OCTAVES, trial,
             python_ms: round(res.timings.pythonMs, 3), transfer_ms: round(res.timings.transferMs, 3),
             roundtrip_ms: round(res.wallMs, 3), js_ms: round(jsMs, 3),
-            smooth_ms: round(smoothMs, 3), blocks_ms: round(blocksMs, 3),
+            blocks_ms: round(blocksMs, 3),
           });
           await new Promise((r) => setTimeout(r, 30));   // 画面を更新する間を空ける
         }
