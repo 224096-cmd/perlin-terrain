@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perlin Terrain ― 地形生成を学ぶ</title>
+<meta name="description" content="Perlin Noise による地形生成の仕組みを、ブラウザ上の Python で学ぶ教材（卒業研究）">
+<style>
+  :root {
+    --bg: #f4f6f1;
+    --surface: #ffffff;
+    --text: #1d2a22;
+    --muted: #5d6b62;
+    --line: #d5dcd3;
+    --accent: #2f6b4a;
+    --accent-text: #ffffff;
+    --ok: #2f6b4a;
+    --ng: #b3402e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141a16;
+      --surface: #1d2620;
+      --text: #e6ece6;
+      --muted: #9fb0a4;
+      --line: #334038;
+      --accent: #7fc79b;
+      --accent-text: #10201a;
+      --ok: #7fc79b;
+      --ng: #f0907c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+    line-height: 1.75;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 16px 64px;
+  }
+  .version {
+    display: inline-block;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.85rem;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px 12px;
+  }
+  h1 {
+    font-size: clamp(1.6rem, 5vw, 2.2rem);
+    line-height: 1.35;
+    margin: 16px 0 8px;
+    text-wrap: balance;
+  }
+  .lead { color: var(--muted); margin: 0 0 32px; }
+  h2 { font-size: 1.1rem; margin: 0 0 12px; }
+  section {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    text-align: left;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  tr:last-child th, tr:last-child td { border-bottom: none; }
+  th { font-weight: normal; }
+  th small { display: block; color: var(--muted); line-height: 1.5; }
+  td { white-space: nowrap; font-weight: bold; }
+  .ok { color: var(--ok); }
+  .ng { color: var(--ng); }
+  button {
+    font: inherit;
+    margin-top: 16px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-text);
+    cursor: pointer;
+  }
+  button:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
+  ol { margin: 0; padding-left: 1.4em; }
+  li.done { color: var(--muted); }
+  li.done::after { content: " ✓"; color: var(--ok); }
+  footer { color: var(--muted); font-size: 0.85rem; margin-top: 32px; }
+</style>
+</head>
+<body>
+<main>
+  <span class="version" id="version">v-.-.-</span>
+  <h1>Perlin Terrain<br>地形生成のしくみを Python で学ぶ</h1>
+  <p class="lead">このページが見えていれば、GitHub Pages への公開は成功です。教材本体はこれから追加していきます。</p>
+
+  <section>
+    <h2>この端末の対応状況</h2>
+    <table>
+      <tbody id="checks">
+        <tr><th>JavaScript</th><td class="ng">動いていません</td></tr>
+      </tbody>
+    </table>
+    <button type="button" id="save">結果を JSON で保存</button>
+  </section>
+
+  <section>
+    <h2>開発の予定</h2>
+    <ol>
+      <li class="done">雛形を GitHub Pages に表示する</li>
+      <li>Pyodide で Python コードを実行する</li>
+      <li>1 次元ノイズの学習ステップ</li>
+      <li>2 次元 Perlin Noise の学習ステップ</li>
+      <li>オクターブ合成の学習ステップ</li>
+      <li>3D 地形・ブロック表示</li>
+      <li>計測結果・学習ログの CSV / JSON 書き出し</li>
+    </ol>
+  </section>
+
+  <footer>三重大学 教育学部 技術・ものづくり教育コース 卒業研究</footer>
+</main>
+
+<script>
+  // 版番号はここ 1 か所だけを書き換える（push が反映されたかを画面で確認するため）
+  const APP_VERSION = "0.1.0";
+
+  // WebAssembly: Pyodide（ブラウザ内 Python）を動かすのに必要な仕組み
+  function hasWebAssembly() {
+    return typeof WebAssembly === "object" && typeof WebAssembly.instantiate === "function";
+  }
+
+  // WebGL: Three.js で 3D を描くのに必要な仕組み
+  function webglVersion() {
+    const canvas = document.createElement("canvas");
+    if (canvas.getContext("webgl2")) return 2;
+    if (canvas.getContext("webgl")) return 1;
+    return 0;
+  }
+
+  // Web Worker: 画面を止めずに裏で計算するための仕組み
+  function hasWorker() {
+    return typeof Worker === "function";
+  }
+
+  const gl = webglVersion();
+  const checks = [
+    { id: "javascript", name: "JavaScript", note: "ページを動かす基本の仕組み", ok: true, value: "OK" },
+    { id: "webassembly", name: "WebAssembly", note: "Python をブラウザ内で動かすのに必要", ok: hasWebAssembly(), value: hasWebAssembly() ? "OK" : "非対応" },
+    { id: "webgl", name: "WebGL", note: "3D 地形を描くのに必要", ok: gl > 0, value: gl > 0 ? "OK（WebGL " + gl + "）" : "非対応" },
+    { id: "worker", name: "Web Worker", note: "計算中も画面を固まらせないために必要", ok: hasWorker(), value: hasWorker() ? "OK" : "非対応" }
+  ];
+
+  document.getElementById("version").textContent = "v" + APP_VERSION;
+
+  const tbody = document.getElementById("checks");
+  tbody.textContent = "";
+  for (const c of checks) {
+    const tr = document.createElement("tr");
+    const th = document.createElement("th");
+    th.textContent = c.name;
+    const small = document.createElement("small");
+    small.textContent = c.note;
+    th.appendChild(small);
+    const td = document.createElement("td");
+    td.textContent = c.value;
+    td.className = c.ok ? "ok" : "ng";
+    tr.append(th, td);
+    tbody.appendChild(tr);
+  }
+
+  // 卒論の「動作確認した端末の一覧」に使えるよう、結果をファイルに書き出す
+  document.getElementById("save").addEventListener("click", () => {
+    const result = {
+      app: "perlin-terrain",
+      version: APP_VERSION,
+      checkedAt: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      screen: { width: screen.width, height: screen.height, pixelRatio: window.devicePixelRatio },
+      cpuCores: navigator.hardwareConcurrency || null,
+      checks: Object.fromEntries(checks.map((c) => [c.id, c.ok])),
+      webglVersion: gl
+    };
+    const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "perlin-terrain-env-" + result.checkedAt.slice(0, 19).replace(/[:T]/g, "-") + ".json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+</script>
+</body>
+</html>

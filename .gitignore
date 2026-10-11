@@ -1,0 +1,9 @@
+# Windows が自動で作るファイル
+Thumbs.db
+desktop.ini
+
+# VS Code の個人設定
+.vscode/
+
+# 配布用 zip はリポジトリに入れない
+*.zip
