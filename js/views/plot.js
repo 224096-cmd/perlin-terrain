@@ -1,5 +1,6 @@
 // 折れ線グラフ（plot() の表示先）。Canvas に自前で描く。
 import { el, fmt } from '../util.js';
+import { GRASS_SIDE, TEX_SEED, pixelCanvas } from './blocktex.js';
 
 const SERIES_COUNT = 8;
 
@@ -30,6 +31,8 @@ export class PlotView {
     this.series = [];
     this.ghost = null;          // ひとつ前の結果（うすい線で重ねる）
     this.ghostVisible = true;
+    this.style = 'line';        // line: 線グラフ / blocks: ブロックを積んだ断面
+    this.tex = null;            // ブロックの質感（最初に使うときに作る）
     this.hover = null;
     this.caption = el('p', { class: 'plot-caption' });
     this.legend = el('ul', { class: 'plot-legend' });
@@ -65,6 +68,40 @@ export class PlotView {
     if (this.series.length) this._refresh();
   }
 
+  // 見た目を切り替える（line / blocks）
+  setStyle(style) {
+    this.style = style === 'blocks' ? 'blocks' : 'line';
+    this.hover = null;
+    this.tip.hidden = true;
+    if (this.series.length) this._refresh();
+  }
+
+  // ブロックで表す線（最後に描かれた線。ステップ 5 なら「合計」）
+  _mainSeries() {
+    for (let k = this.series.length - 1; k >= 0; k--) if (!this.series[k].dots) return this.series[k];
+    return null;
+  }
+
+  // 横位置 x での値を、前後の点から直線でつないで求める
+  _valueAt(s, x) {
+    const n = s.ys.length;
+    if (n === 0) return NaN;
+    if (!s.xs) {
+      const p = Math.min(n - 1, Math.max(0, x));
+      const i = Math.min(n - 2, Math.floor(p));
+      return n === 1 ? s.ys[0] : s.ys[i] + (s.ys[i + 1] - s.ys[i]) * (p - i);
+    }
+    let lo = 0, hi = n - 1;
+    if (x <= s.xs[0]) return s.ys[0];
+    if (x >= s.xs[hi]) return s.ys[hi];
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (s.xs[mid] <= x) lo = mid; else hi = mid;
+    }
+    const span = s.xs[hi] - s.xs[lo];
+    return span > 0 ? s.ys[lo] + (s.ys[hi] - s.ys[lo]) * ((x - s.xs[lo]) / span) : s.ys[lo];
+  }
+
   _ghostSeries() {
     return this.ghostVisible && this.ghost && this.ghost.length ? this.ghost : [];
   }
@@ -72,12 +109,14 @@ export class PlotView {
   _refresh() {
     this._computeRanges();
     const ghost = this._ghostSeries().length > 0;
+    const main = this.style === 'blocks' ? this._mainSeries() : null;
     const named = this.series.filter((s) => s.label);
-    this.caption.hidden = ghost || !(this.series.length === 1 && named.length === 1);
+    this.caption.hidden = ghost || !!main || !(this.series.length === 1 && named.length === 1);
     this.caption.textContent = this.caption.hidden ? '' : named[0].label;
-    this.legend.hidden = this.series.length < 2 && !ghost;
+    this.legend.hidden = this.series.length < 2 && !ghost && !main;
     const ghostItem = ghost ? [el('li', {}, [el('span', { class: 'swatch ghost' }), 'ひとつ前の結果'])] : [];
-    this.legend.replaceChildren(...ghostItem, ...this.series.map((s) => el('li', {}, [
+    const blockItem = main ? [el('li', {}, [el('span', { class: 'swatch blocks' }), `ブロック（草・土・石）: ${main.label || `線 ${main.slot}`} の高さまで積む`])] : [];
+    this.legend.replaceChildren(...blockItem, ...ghostItem, ...this.series.map((s) => el('li', {}, [
       el('span', { class: 'swatch' + (s.dots ? ' dot' : ''), style: `--c: var(--series-${s.slot}); --w: ${Math.max(2, Math.round((s.width || 2) * 1.5))}px` }),
       s.label || `線 ${s.slot}`,
     ])));
@@ -104,6 +143,15 @@ export class PlotView {
     }
     if (!Number.isFinite(x0)) { x0 = 0; x1 = 1; y0 = -1; y1 = 1; }
     if (x1 === x0) x1 = x0 + 1;
+    // ブロック表示で点の数が少ないとき（80 個まで）は、点 1 個をブロックの柱 1 本にぴったり対応させる。
+    // そのために、横の範囲を左右に半マスずつ広げる。
+    this.exactColumns = 0;
+    const main = this.style === 'blocks' ? this._mainSeries() : null;
+    if (main && !main.xs && main.ys.length >= 2 && main.ys.length <= 80 && x0 >= 0 && x1 <= main.ys.length - 1) {
+      this.exactColumns = main.ys.length;
+      x0 = -0.5;
+      x1 = main.ys.length - 0.5;
+    }
     // 縦軸は -1〜1 を基本にし、はみ出すときだけ広げる（振幅の違いが見た目で分かるように）
     let lo = Math.min(-1, y0);
     let hi = Math.max(1, y1);
@@ -136,15 +184,31 @@ export class PlotView {
     if (!this.series.length) return;
 
     const R = this.range;
-    const pw = L.w - L.left - L.right;
-    const ph = L.h - L.top - L.bottom;
+    let pw = L.w - L.left - L.right;
+    let ph = L.h - L.top - L.bottom;
+    let top = L.top;
+    // ブロック表示では、ブロックがちょうど正方形で並ぶように、描く範囲をブロックの大きさの整数倍にする
+    let grid = null;
+    const main = this.style === 'blocks' ? this._mainSeries() : null;
+    if (main) {
+      // ブロック 1 個の大きさ（px）。ふつうは横に 40 個ほど並べる。点が少ないときは、点の数だけ並べる
+      const size = this.exactColumns ? Math.max(3, Math.floor(pw / this.exactColumns)) : Math.max(7, Math.floor(pw / 40));
+      const cols = this.exactColumns || Math.floor(pw / size);
+      const rows = Math.floor(ph / size);
+      top += ph - rows * size;
+      pw = cols * size;
+      ph = rows * size;
+      grid = { size, cols, rows, heights: new Int16Array(cols) };
+    }
+    const right = L.left + pw;
+    const bottom = top + ph;
     const sx = (x) => L.left + ((x - R.x0) / (R.x1 - R.x0)) * pw;
-    const sy = (y) => L.top + (1 - (y - R.y0) / (R.y1 - R.y0)) * ph;
-    this._scale = { sx, sy, L, pw, ph };
+    const sy = (y) => top + (1 - (y - R.y0) / (R.y1 - R.y0)) * ph;
+    this._scale = { sx, sy, L, pw, ph, top, right, bottom, grid };
 
     const ink = cssVar(this.host, '--ink');
     const ink2 = cssVar(this.host, '--ink-2');
-    const grid = cssVar(this.host, '--grid');
+    const gridColor = cssVar(this.host, '--grid');
     const surface = cssVar(this.host, '--surface');
     const font = getComputedStyle(this.host).fontFamily;
 
@@ -155,11 +219,11 @@ export class PlotView {
     g.textAlign = 'right';
     for (const v of niceTicks(R.y0, R.y1, 5)) {
       const y = Math.round(sy(v)) + 0.5;
-      g.strokeStyle = v === 0 ? ink2 : grid;
+      g.strokeStyle = v === 0 ? ink2 : gridColor;
       g.globalAlpha = v === 0 ? 0.6 : 1;
       g.beginPath();
       g.moveTo(L.left, y);
-      g.lineTo(L.w - L.right, y);
+      g.lineTo(right, y);
       g.stroke();
       g.globalAlpha = 1;
       g.fillStyle = ink2;
@@ -172,6 +236,30 @@ export class PlotView {
       const x = sx(v);
       g.fillStyle = ink2;
       g.fillText(tickLabel(v), x, L.h - L.bottom + 8);
+    }
+
+    // ブロック表示: 線の高さまで、草・土・石のブロックを積む
+    if (grid) {
+      this.tex ??= {
+        grass: pixelCanvas(GRASS_SIDE.seed, GRASS_SIDE.base, GRASS_SIDE.cap),
+        dirt: pixelCanvas(TEX_SEED.dirt, 'dirt'),
+        stone: pixelCanvas(TEX_SEED.stone, 'stone'),
+      };
+      g.imageSmoothingEnabled = false;
+      for (let c = 0; c < grid.cols; c++) {
+        const x = R.x0 + ((c + 0.5) / grid.cols) * (R.x1 - R.x0);
+        const v = this._valueAt(main, x);
+        if (!Number.isFinite(v)) continue;
+        // 高さを「ブロック何個分か」の整数に丸める（いちばん下の 1 個は必ず置く）
+        const count = Math.min(grid.rows, Math.max(1, Math.round(((v - R.y0) / (R.y1 - R.y0)) * grid.rows)));
+        grid.heights[c] = count;
+        for (let k = 0; k < count; k++) {
+          const depth = count - 1 - k;                      // 上から何個目か（0 がいちばん上）
+          const tex = depth === 0 ? this.tex.grass : depth <= 3 ? this.tex.dirt : this.tex.stone;
+          g.drawImage(tex, L.left + c * grid.size, bottom - (k + 1) * grid.size, grid.size, grid.size);
+        }
+      }
+      g.imageSmoothingEnabled = true;
     }
 
     // ひとつ前の結果（うすい線）
@@ -213,8 +301,6 @@ export class PlotView {
         }
         continue;
       }
-      g.strokeStyle = color;
-      g.lineWidth = s.width || 2;
       g.lineJoin = 'round';
       g.lineCap = 'round';
       g.beginPath();
@@ -226,6 +312,15 @@ export class PlotView {
         if (pen) g.lineTo(sx(x), sy(y));
         else { g.moveTo(sx(x), sy(y)); pen = true; }
       }
+      if (grid && s !== main) {
+        // ブロックの上でも線が見えるように、白いふちを付ける
+        g.strokeStyle = surface;
+        g.lineWidth = 3.5;
+        g.stroke();
+      }
+      g.strokeStyle = color;
+      // ブロック表示では、ブロックが主役になるよう線を細くする（ブロックにした線は、草の段が隠れないよう特に細く）
+      g.lineWidth = grid ? (s === main ? 1.2 : 1.5) : (s.width || 2);
       g.stroke();
       if (n === 1 && Number.isFinite(s.ys[0])) {
         g.beginPath();
@@ -242,8 +337,8 @@ export class PlotView {
       g.globalAlpha = 0.45;
       g.lineWidth = 1;
       g.beginPath();
-      g.moveTo(x, L.top);
-      g.lineTo(x, L.h - L.bottom);
+      g.moveTo(x, top);
+      g.lineTo(x, bottom);
       g.stroke();
       g.globalAlpha = 1;
       for (const p of this.hover.points) {
@@ -273,9 +368,9 @@ export class PlotView {
   _onMove(ev) {
     if (!this.series.length || !this._scale) return;
     const rect = this.canvas.getBoundingClientRect();
-    const { L, pw } = this._scale;
+    const { L, pw, right, grid } = this._scale;
     const R = this.range;
-    const px = Math.min(L.w - L.right, Math.max(L.left, ev.clientX - rect.left));
+    const px = Math.min(right, Math.max(L.left, ev.clientX - rect.left));
     const x = R.x0 + ((px - L.left) / pw) * (R.x1 - R.x0);
 
     // 線の系列を優先して、横位置がいちばん近い点を読む
@@ -296,6 +391,8 @@ export class PlotView {
     this.hover = { x: ax, points };
     this.draw();
 
+    // ブロック表示のときは、その位置に積まれているブロックの個数も出す
+    const column = grid ? Math.min(grid.cols - 1, Math.max(0, Math.floor(((ax - R.x0) / (R.x1 - R.x0)) * grid.cols))) : -1;
     this.tip.replaceChildren(
       el('div', { class: 'tip-x', text: `横の位置 ${fmt(ax)}` }),
       ...points.map((p) => el('div', { class: 'tip-row' }, [
@@ -303,13 +400,18 @@ export class PlotView {
         el('span', { class: 'tip-label', text: p.label }),
         el('b', { text: fmt(p.y) }),
       ])),
+      grid ? el('div', { class: 'tip-row' }, [
+        el('span', { class: 'swatch blocks' }),
+        el('span', { class: 'tip-label', text: 'ブロックの高さ' }),
+        el('b', { text: `${grid.heights[column]} 個` }),
+      ]) : null,
     );
     this.tip.hidden = false;
     const tw = this.tip.offsetWidth;
     const cx = this._scale.sx(ax);
     const left = cx + 14 + tw > L.w ? cx - 14 - tw : cx + 14;
     this.tip.style.left = Math.max(4, left) + 'px';
-    this.tip.style.top = L.top + 4 + 'px';
+    this.tip.style.top = this._scale.top + 4 + 'px';
   }
 
   toBlob(callback) {

@@ -598,6 +598,20 @@ $('autoRotate').addEventListener('change', (ev) => terrainView?.setAutoRotate(ev
 $('resetView').addEventListener('click', () => terrainView?.resetCamera());
 $('ghostToggle').addEventListener('change', (ev) => plotView.setGhostVisible(ev.target.checked));
 
+// グラフの見た目（線 / ブロックを積んだ断面）。選んだほうを覚えておく
+function setPlotStyle(style, byUser) {
+  $('plotLine').setAttribute('aria-pressed', String(style === 'line'));
+  $('plotBlocks').setAttribute('aria-pressed', String(style === 'blocks'));
+  plotView.setStyle(style);
+  if (byUser) {
+    store.set('perlinTerrain.plotStyle', style);
+    logger.add('plot_style', LESSONS[lessonIndex].id, { detail: style });
+  }
+}
+$('plotLine').addEventListener('click', () => setPlotStyle('line', true));
+$('plotBlocks').addEventListener('click', () => setPlotStyle('blocks', true));
+setPlotStyle(store.get('perlinTerrain.plotStyle', 'line') === 'blocks' ? 'blocks' : 'line', false);
+
 const saveName = (kind) => `perlin-terrain-step${lessonIndex + 1}-${kind}-${stamp()}.png`;
 $('plotSave').addEventListener('click', () => plotView.toBlob((b) => b && downloadBlob(b, saveName('graph'))));
 $('terrainSave').addEventListener('click', () => terrainView?.toBlob((b) => b && downloadBlob(b, saveName('3d'))));

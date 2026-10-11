@@ -586,10 +586,12 @@ body.dragging-block * { cursor: grabbing !important; }
 @keyframes ran { from { box-shadow: 0 0 0 3px var(--changed); } to { box-shadow: 0 0 0 3px transparent; } }
 .out-head .check { margin-left: auto; margin-right: 0; }
 .swatch.ghost { background: var(--ink-2); opacity: 0.5; height: 2px; }
+/* ブロック表示の目印: 上から 草・土・石 */
+.swatch.blocks { width: 12px; height: 12px; border-radius: 0; background: linear-gradient(to bottom, #5fa84a 0 33%, #8a6240 33% 66%, #8c8f92 66% 100%); }
 /* 3D の下の操作: 1 行目に「自動で回す」とボタン、2 行目に操作の説明 */
 .terrain-tools .check { margin-right: auto; }
 .terrain-hint { order: 9; flex-basis: 100%; font-size: 0.8rem; color: var(--ink-2); }
-.out-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.out-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 6px; }
 .out-head h2 { font-size: 1rem; }
 .note { font-size: 0.88rem; color: var(--ink-2); margin-top: 8px; }
 .run-stats { font-size: 0.82rem; color: var(--ink-2); border-top: 1px solid var(--line); padding-top: 10px; }

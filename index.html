@@ -117,6 +117,10 @@
         <div class="out-block" id="plotBlock" hidden>
           <div class="out-head">
             <h2>グラフ</h2>
+            <div class="segmented" role="group" aria-label="グラフの見た目">
+              <button type="button" id="plotLine" aria-pressed="true">線</button>
+              <button type="button" id="plotBlocks" aria-pressed="false">ブロック</button>
+            </div>
             <label class="check"><input type="checkbox" id="ghostToggle" checked> ひとつ前の結果も表示</label>
             <button type="button" class="btn quiet small" id="plotSave">画像を保存</button>
           </div>

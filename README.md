@@ -4,7 +4,7 @@ Pyodide を用いたブラウザ完結型プロシージャル地形生成学習
 
 公開ページ: https://224096-cmd.github.io/perlin-terrain/
 
-現在の版: v1.3.0
+現在の版: v1.4.0
 
 ## 概要
 
@@ -35,6 +35,7 @@ Pyodide を用いたブラウザ完結型プロシージャル地形生成学習
 - 書き換えると自動で実行され、結果がすぐ変わります（「変えたらすぐ実行」を外すと、ボタンで実行）。
 - スライダーを動かすと、コードの `slider("名前", 最小, 最大, 値)` の「値」も一緒に書き換わります。コードの数字がいつも実際の値です。
 - 実行のたびに、結果が前回から変わったかどうかを表示します。グラフには、ひとつ前の結果がうすい線で残ります。
+- グラフは「線」と「ブロック」を切り替えられます。「ブロック」では、線の高さまで草・土・石のブロックを積んだ、地面の断面として表示します（1 次元のステップでも、3D と同じブロックの見た目で確かめられます）。
 - 前のステップで学んだ関数は、ブロック表示では最初はたたまれています。そのステップで新しく出てくる部分には目印が付きます。
 - エラーは日本語の説明と、Python の元の表示の両方を出します。
 
@@ -99,7 +100,8 @@ Pyodide を用いたブラウザ完結型プロシージャル地形生成学習
 | `js/py-worker.js` | Pyodide を動かす Web Worker |
 | `js/lessons.js` | 各ステップの説明文・課題と解説・部品 |
 | `js/figures.js` | 説明用の図（教材と同じ式で計算して描く） |
-| `js/views/plot.js` `terrain3d.js` | グラフと 3D（ブロック）の表示 |
+| `js/views/plot.js` `terrain3d.js` | グラフ（線 / ブロックの断面）と 3D（ブロック）の表示 |
+| `js/views/blocktex.js` | ブロックの質感（ドット絵）。グラフと 3D で共通 |
 | `js/trail.js` | ステップ一覧（山の断面図） |
 | `js/log.js` | 学習記録と書き出し |
 | `js/bench.js` `js/noise-ref.js` | 性能計測と、比較用の JavaScript 実装 |
@@ -120,7 +122,7 @@ Pyodide を用いたブラウザ完結型プロシージャル地形生成学習
 | `timestamp` | 日時（UTC、ISO 8601 形式） |
 | `session` | ページを開くたびに変わる ID（個人を特定する情報ではない） |
 | `step` / `lesson` | ステップ番号と ID |
-| `event` | `session_start` / `lesson_open` / `run` / `slider` / `block_edit` / `task_check` / `task_answer`（解説を開いた）/ `editor_mode` / `code_reset` / `stop` |
+| `event` | `session_start` / `lesson_open` / `run` / `slider` / `block_edit` / `task_check` / `task_answer`（解説を開いた）/ `editor_mode` / `plot_style`（グラフの見た目を切り替えた）/ `code_reset` / `stop` |
 | `trigger` | 実行のきっかけ。`open`（ステップを開いた）/ `button` / `shortcut` / `edit`（書き換えによる自動実行）/ `slider` / `reset` |
 | `ok` | 実行がエラーなく終わったか |
 | `error_type` / `error_line` | エラーの種類（`NameError`、`Timeout`、`Stopped` など）と行番号 |
