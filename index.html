@@ -3,199 +3,177 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Perlin Terrain ― 地形生成を学ぶ</title>
-<meta name="description" content="Perlin Noise による地形生成の仕組みを、ブラウザ上の Python で学ぶ教材（卒業研究）">
-<style>
-  :root {
-    --bg: #f4f6f1;
-    --surface: #ffffff;
-    --text: #1d2a22;
-    --muted: #5d6b62;
-    --line: #d5dcd3;
-    --accent: #2f6b4a;
-    --accent-text: #ffffff;
-    --ok: #2f6b4a;
-    --ng: #b3402e;
+<title>Perlin Terrain ― 地形生成のしくみを Python で学ぶ</title>
+<meta name="description" content="パーリンノイズによる地形生成のしくみを、ブラウザ上の Python で書き換えながら学ぶ教材">
+<meta name="theme-color" content="#1f6f8b">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="stylesheet" href="./vendor/codemirror/codemirror.css">
+<link rel="stylesheet" href="./css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #141a16;
-      --surface: #1d2620;
-      --text: #e6ece6;
-      --muted: #9fb0a4;
-      --line: #334038;
-      --accent: #7fc79b;
-      --accent-text: #10201a;
-      --ok: #7fc79b;
-      --ng: #f0907c;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
-    line-height: 1.75;
-  }
-  main {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 40px 16px 64px;
-  }
-  .version {
-    display: inline-block;
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 0.85rem;
-    color: var(--muted);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 2px 12px;
-  }
-  h1 {
-    font-size: clamp(1.6rem, 5vw, 2.2rem);
-    line-height: 1.35;
-    margin: 16px 0 8px;
-    text-wrap: balance;
-  }
-  .lead { color: var(--muted); margin: 0 0 32px; }
-  h2 { font-size: 1.1rem; margin: 0 0 12px; }
-  section {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-  }
-  table { width: 100%; border-collapse: collapse; }
-  th, td {
-    text-align: left;
-    padding: 8px 4px;
-    border-bottom: 1px solid var(--line);
-    vertical-align: top;
-  }
-  tr:last-child th, tr:last-child td { border-bottom: none; }
-  th { font-weight: normal; }
-  th small { display: block; color: var(--muted); line-height: 1.5; }
-  td { white-space: nowrap; font-weight: bold; }
-  .ok { color: var(--ok); }
-  .ng { color: var(--ng); }
-  button {
-    font: inherit;
-    margin-top: 16px;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 8px;
-    background: var(--accent);
-    color: var(--accent-text);
-    cursor: pointer;
-  }
-  button:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
-  ol { margin: 0; padding-left: 1.4em; }
-  li.done { color: var(--muted); }
-  li.done::after { content: " ✓"; color: var(--ok); }
-  footer { color: var(--muted); font-size: 0.85rem; margin-top: 32px; }
-</style>
+}
+</script>
 </head>
 <body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">Perlin Terrain</span>
+    <span class="brand-version" id="version"></span>
+  </div>
+  <nav class="tabs" aria-label="画面の切り替え">
+    <button type="button" class="tab" data-tab="learn" aria-pressed="true">学ぶ</button>
+    <button type="button" class="tab" data-tab="bench" aria-pressed="false">計測</button>
+    <button type="button" class="tab" data-tab="log" aria-pressed="false">記録</button>
+  </nav>
+  <p class="py-status" id="pyStatus" data-state="loading" role="status">Python を準備しています…</p>
+</header>
+
+<noscript><p class="page-note">この教材を使うには、ブラウザの JavaScript を有効にしてください。</p></noscript>
+
 <main>
-  <span class="version" id="version">v-.-.-</span>
-  <h1>Perlin Terrain<br>地形生成のしくみを Python で学ぶ</h1>
-  <p class="lead">このページが見えていれば、GitHub Pages への公開は成功です。教材本体はこれから追加していきます。</p>
+  <!-- ===== 学ぶ ===== -->
+  <section id="tab-learn" class="tabpage">
+    <nav class="trail" id="trail" aria-label="ステップ一覧"></nav>
 
-  <section>
-    <h2>この端末の対応状況</h2>
-    <table>
-      <tbody id="checks">
-        <tr><th>JavaScript</th><td class="ng">動いていません</td></tr>
-      </tbody>
-    </table>
-    <button type="button" id="save">結果を JSON で保存</button>
+    <header class="lesson-head">
+      <p class="lesson-step" id="lessonStep"></p>
+      <h1 id="lessonTitle"></h1>
+    </header>
+
+    <div class="lesson-text">
+      <div class="lesson-intro" id="lessonIntro"></div>
+      <aside class="lesson-side">
+        <h2>やってみよう</h2>
+        <ol class="lesson-tasks" id="lessonTasks"></ol>
+        <details class="lesson-terms" id="lessonTermsBox">
+          <summary>このステップのことば</summary>
+          <dl id="lessonTerms"></dl>
+        </details>
+      </aside>
+    </div>
+
+    <div class="workbench">
+      <section class="panel code-panel" aria-label="Python のコード">
+        <div class="toolbar">
+          <button type="button" class="btn primary" id="runBtn" disabled>実行する</button>
+          <button type="button" class="btn" id="stopBtn" hidden>止める</button>
+          <span class="toolbar-hint">Ctrl + Enter でも実行できます</span>
+          <button type="button" class="btn quiet" id="resetBtn">お手本に戻す</button>
+        </div>
+        <div class="editor" id="editor"></div>
+        <div class="errorbox" id="errorBox" role="alert" hidden></div>
+        <div class="console" id="consoleBox" hidden>
+          <h2>print の出力</h2>
+          <pre id="consoleOut"></pre>
+        </div>
+      </section>
+
+      <section class="panel out-panel" aria-label="実行結果">
+        <div class="sliders" id="sliders" hidden></div>
+        <p class="out-empty" id="outEmpty">Python の準備ができると、ここに結果が表示されます。</p>
+
+        <div class="out-block" id="plotBlock" hidden>
+          <div class="out-head"><h2>グラフ</h2><button type="button" class="btn quiet small" id="plotSave">画像を保存</button></div>
+          <div class="plot" id="plot"></div>
+          <p class="note" id="plotNote" hidden></p>
+        </div>
+
+        <div class="out-block" id="terrainBlock" hidden>
+          <div class="out-head">
+            <h2>3D の地形</h2>
+            <div class="segmented" role="group" aria-label="地形の見た目">
+              <button type="button" id="modeSmooth" aria-pressed="true">なめらか</button>
+              <button type="button" id="modeBlocks" aria-pressed="false">ブロック</button>
+            </div>
+          </div>
+          <div class="terrain" id="terrain"></div>
+          <div class="terrain-tools">
+            <label class="check"><input type="checkbox" id="autoRotate"> 自動で回す</label>
+            <button type="button" class="btn quiet small" id="resetView">視点を戻す</button>
+            <button type="button" class="btn quiet small" id="terrainSave">画像を保存</button>
+          </div>
+          <p class="note" id="terrainNote" hidden></p>
+        </div>
+
+        <div class="out-block" id="mapBlock" hidden>
+          <div class="out-head"><h2>地図</h2><button type="button" class="btn quiet small" id="mapSave">画像を保存</button></div>
+          <div class="maps" id="maps"></div>
+        </div>
+
+        <p class="run-stats" id="runStats" hidden></p>
+      </section>
+    </div>
+
+    <nav class="pager" aria-label="前後のステップ">
+      <button type="button" class="btn" id="prevBtn">前のステップ</button>
+      <button type="button" class="btn primary" id="nextBtn">次のステップ</button>
+    </nav>
   </section>
 
-  <section>
-    <h2>開発の予定</h2>
-    <ol>
-      <li class="done">雛形を GitHub Pages に表示する</li>
-      <li>Pyodide で Python コードを実行する</li>
-      <li>1 次元ノイズの学習ステップ</li>
-      <li>2 次元 Perlin Noise の学習ステップ</li>
-      <li>オクターブ合成の学習ステップ</li>
-      <li>3D 地形・ブロック表示</li>
-      <li>計測結果・学習ログの CSV / JSON 書き出し</li>
-    </ol>
+  <!-- ===== 計測 ===== -->
+  <section id="tab-bench" class="tabpage prose-page" hidden>
+    <h1>性能を計測する</h1>
+    <p>この端末で、地形の生成と表示にどれくらい時間がかかるかを測ります。地形の大きさを 16×16 から 128×128 まで変えながら、同じ計算をくり返します。</p>
+
+    <h2>この端末</h2>
+    <div id="benchDevice"></div>
+
+    <h2>Python の起動</h2>
+    <div id="benchStartup"><p class="note">Python の準備が終わると表示されます。</p></div>
+
+    <h2>地形の生成と表示</h2>
+    <div class="bench-controls">
+      <label>くり返す回数
+        <select id="benchRepeats">
+          <option value="3">3 回</option>
+          <option value="5" selected>5 回</option>
+          <option value="10">10 回</option>
+        </select>
+      </label>
+      <button type="button" class="btn primary" id="benchRun">計測を始める</button>
+      <p class="bench-status" id="benchStatus" role="status"></p>
+    </div>
+    <div class="terrain bench-preview" id="benchPreview" hidden></div>
+    <div class="table-scroll" id="benchTable"></div>
+    <div class="exports" id="benchExports" hidden>
+      <button type="button" class="btn" id="benchCsv">CSV で保存</button>
+      <button type="button" class="btn" id="benchJson">JSON で保存</button>
+      <button type="button" class="btn" id="benchMd">Markdown で保存</button>
+    </div>
+    <p class="note">「Python 生成」は Python での計算時間、「受け渡し」は結果を画面側へ渡す時間、「JavaScript 生成」は同じ計算を JavaScript で行った時間、「3D」は立体の形を作って描き終えるまでの時間です。</p>
   </section>
 
-  <footer>三重大学 教育学部 技術・ものづくり教育コース 卒業研究</footer>
+  <!-- ===== 記録 ===== -->
+  <section id="tab-log" class="tabpage prose-page" hidden>
+    <h1>学習の記録</h1>
+    <p>この教材を使った履歴（開いたステップ、実行した回数、エラー、スライダーの操作、実行時間）です。記録はこの端末のブラウザの中だけに保存され、どこにも送信されません。</p>
+    <p id="logCount"></p>
+    <div class="table-scroll" id="logTable"></div>
+    <div class="exports">
+      <button type="button" class="btn" id="logCsv">CSV で保存（全記録）</button>
+      <button type="button" class="btn" id="logJson">JSON で保存（全記録と集計）</button>
+      <button type="button" class="btn" id="logMd">Markdown で保存（集計）</button>
+      <button type="button" class="btn danger" id="logClear">記録を消去</button>
+    </div>
+    <p class="note">作業時間は、同じステップの中で続いている操作の間隔を合計したものです（5 分以上の空白は除きます）。</p>
+  </section>
 </main>
 
-<script>
-  // 版番号はここ 1 か所だけを書き換える（push が反映されたかを画面で確認するため）
-  const APP_VERSION = "0.1.0";
+<footer class="footer">
+  <p>三重大学 教育学部 技術・ものづくり教育コース 卒業研究</p>
+  <p><a href="./THIRD_PARTY_NOTICES.md">利用しているライブラリとライセンス</a></p>
+</footer>
 
-  // WebAssembly: Pyodide（ブラウザ内 Python）を動かすのに必要な仕組み
-  function hasWebAssembly() {
-    return typeof WebAssembly === "object" && typeof WebAssembly.instantiate === "function";
-  }
-
-  // WebGL: Three.js で 3D を描くのに必要な仕組み
-  function webglVersion() {
-    const canvas = document.createElement("canvas");
-    if (canvas.getContext("webgl2")) return 2;
-    if (canvas.getContext("webgl")) return 1;
-    return 0;
-  }
-
-  // Web Worker: 画面を止めずに裏で計算するための仕組み
-  function hasWorker() {
-    return typeof Worker === "function";
-  }
-
-  const gl = webglVersion();
-  const checks = [
-    { id: "javascript", name: "JavaScript", note: "ページを動かす基本の仕組み", ok: true, value: "OK" },
-    { id: "webassembly", name: "WebAssembly", note: "Python をブラウザ内で動かすのに必要", ok: hasWebAssembly(), value: hasWebAssembly() ? "OK" : "非対応" },
-    { id: "webgl", name: "WebGL", note: "3D 地形を描くのに必要", ok: gl > 0, value: gl > 0 ? "OK（WebGL " + gl + "）" : "非対応" },
-    { id: "worker", name: "Web Worker", note: "計算中も画面を固まらせないために必要", ok: hasWorker(), value: hasWorker() ? "OK" : "非対応" }
-  ];
-
-  document.getElementById("version").textContent = "v" + APP_VERSION;
-
-  const tbody = document.getElementById("checks");
-  tbody.textContent = "";
-  for (const c of checks) {
-    const tr = document.createElement("tr");
-    const th = document.createElement("th");
-    th.textContent = c.name;
-    const small = document.createElement("small");
-    small.textContent = c.note;
-    th.appendChild(small);
-    const td = document.createElement("td");
-    td.textContent = c.value;
-    td.className = c.ok ? "ok" : "ng";
-    tr.append(th, td);
-    tbody.appendChild(tr);
-  }
-
-  // 卒論の「動作確認した端末の一覧」に使えるよう、結果をファイルに書き出す
-  document.getElementById("save").addEventListener("click", () => {
-    const result = {
-      app: "perlin-terrain",
-      version: APP_VERSION,
-      checkedAt: new Date().toISOString(),
-      userAgent: navigator.userAgent,
-      screen: { width: screen.width, height: screen.height, pixelRatio: window.devicePixelRatio },
-      cpuCores: navigator.hardwareConcurrency || null,
-      checks: Object.fromEntries(checks.map((c) => [c.id, c.ok])),
-      webglVersion: gl
-    };
-    const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "perlin-terrain-env-" + result.checkedAt.slice(0, 19).replace(/[:T]/g, "-") + ".json";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
-</script>
+<script src="./vendor/codemirror/codemirror.js" defer></script>
+<script src="./vendor/codemirror/python.js" defer></script>
+<script src="./vendor/codemirror/matchbrackets.js" defer></script>
+<script src="./vendor/codemirror/closebrackets.js" defer></script>
+<script type="module" src="./js/main.js"></script>
 </body>
 </html>

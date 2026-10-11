@@ -1,0 +1,17 @@
+{
+  "name": "Perlin Terrain ― 地形生成のしくみを Python で学ぶ",
+  "short_name": "Perlin Terrain",
+  "description": "パーリンノイズによる地形生成のしくみを、ブラウザ上の Python で書き換えながら学ぶ教材",
+  "lang": "ja",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#edf1ee",
+  "theme_color": "#1f6f8b",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

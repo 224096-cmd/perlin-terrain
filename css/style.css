@@ -1,0 +1,481 @@
+/* Perlin Terrain の見た目。地形図（等高線・高さによる色分け）を手がかりにした配色。 */
+
+:root {
+  color-scheme: light dark;
+
+  --paper: #edf1ee;        /* 地図の紙 */
+  --surface: #ffffff;
+  --ink: #17262c;          /* 地図の文字 */
+  --ink-2: #4c5d62;
+  --line: #c7d2ce;
+  --grid: #e3e9e6;
+  --sea: #1f6f8b;          /* 主な操作ボタン */
+  --sea-ink: #ffffff;
+  --sea-soft: #e2eff3;
+  --contour: #8f5426;      /* 等高線の茶色。強調に使う */
+  --err: #a8361f;
+  --err-soft: #fbece8;
+  --ok: #2c7a4b;
+  --code-bg: #f6f8f7;
+  --sky: #d3e4ec;
+
+  /* 高さによる色分け（ステップの道のりに使う） */
+  --tint-low: #9cc08a;
+  --tint-mid: #d9d3a0;
+  --tint-high: #c4a57c;
+  --tint-peak: #f4f4f1;
+
+  /* グラフの線の色（順番を固定して使う） */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
+
+  --font-body: "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif;
+  --font-title: "BIZ UDPMincho", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+  --font-code: "Cascadia Mono", Consolas, "SF Mono", Menlo, "Noto Sans Mono", "BIZ UDGothic", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0f181c;
+    --surface: #172329;
+    --ink: #e2ebe9;
+    --ink-2: #a1b3b5;
+    --line: #2f4148;
+    --grid: #24343a;
+    --sea: #6dc1d9;
+    --sea-ink: #0b1a1f;
+    --sea-soft: #1d3540;
+    --contour: #dba56e;
+    --err: #f39a85;
+    --err-soft: #3a211c;
+    --ok: #7fcf9d;
+    --code-bg: #121c21;
+    --sky: #1b2f3a;
+
+    --tint-low: #2f5a3c;
+    --tint-mid: #5c6140;
+    --tint-high: #6b5438;
+    --tint-peak: #b9c2c2;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+h1, h2, p, ol, dl, dd, figure { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+code { font-family: var(--font-code); font-size: 0.92em; }
+a { color: var(--sea); }
+
+:focus-visible { outline: 3px solid var(--sea); outline-offset: 2px; }
+
+/* ---------- 上のバー ---------- */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand-name { font-family: var(--font-title); font-size: 1.25rem; font-weight: 700; letter-spacing: 0.02em; }
+.brand-version { font-size: 0.8rem; color: var(--ink-2); }
+
+.tabs { display: flex; gap: 4px; }
+.tab {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  padding: 4px 14px;
+  cursor: pointer;
+}
+.tab:hover { background: var(--paper); }
+.tab[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+
+.py-status {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.py-status::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--contour);
+}
+.py-status[data-state="ready"]::before { background: var(--ok); }
+.py-status[data-state="failed"]::before { background: var(--err); }
+.py-status[data-state="loading"]::before,
+.py-status[data-state="running"]::before { animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
+
+.page-note { padding: 16px 20px; }
+
+/* ---------- ページの枠 ---------- */
+.tabpage { max-width: 1320px; margin: 0 auto; padding: 0 20px 48px; }
+.tabpage[hidden] { display: none; }
+
+/* ---------- ステップの道のり ---------- */
+.trail {
+  position: relative;
+  height: 104px;
+  margin: 12px 0 20px;
+}
+.trail svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.trail .tint-low { stop-color: var(--tint-low); }
+.trail .tint-mid { stop-color: var(--tint-mid); }
+.trail .tint-high { stop-color: var(--tint-high); }
+.trail .tint-peak { stop-color: var(--tint-peak); }
+.trail-contours line { stroke: var(--contour); stroke-width: 0.6; opacity: 0.35; vector-effect: non-scaling-stroke; }
+.trail-ridge { fill: none; stroke: var(--contour); stroke-width: 2; }
+
+.trail-step {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  padding: 0;
+  border: 2px solid var(--contour);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.trail-step:hover { background: var(--sea-soft); }
+.trail-step.done { background: var(--contour); color: var(--surface); }
+.trail-step.current {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 0 0 0 4px var(--paper), 0 0 0 6px var(--ink);
+}
+
+/* ---------- ステップの説明 ---------- */
+.lesson-head { margin-bottom: 16px; }
+.lesson-step { font-size: 0.9rem; color: var(--contour); font-weight: 700; }
+.lesson-head h1 {
+  font-family: var(--font-title);
+  font-size: clamp(1.6rem, 4.2vw, 2.3rem);
+  line-height: 1.35;
+  font-weight: 700;
+  text-wrap: balance;
+}
+
+.lesson-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px 40px;
+  margin-bottom: 28px;
+}
+.lesson-intro { max-width: 40em; }
+.lesson-intro p + p { margin-top: 0.8em; }
+.lesson-intro b { color: var(--contour); }
+
+.lesson-side h2 { font-size: 1rem; margin-bottom: 6px; }
+.lesson-tasks { padding-left: 1.5em; }
+.lesson-tasks li { margin-bottom: 0.5em; }
+.lesson-tasks li::marker { color: var(--contour); font-weight: 700; }
+.lesson-terms { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.lesson-terms summary { cursor: pointer; font-weight: 700; }
+.lesson-terms dt { margin-top: 10px; font-weight: 700; }
+.lesson-terms dd { color: var(--ink-2); }
+.lesson-text code {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- 作業場（コードと結果） ---------- */
+.workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+@media (min-width: 960px) {
+  .lesson-text { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+  .workbench { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.toolbar-hint { font-size: 0.8rem; color: var(--ink-2); }
+.toolbar #resetBtn { margin-left: auto; }
+@media (max-width: 640px) { .toolbar-hint { display: none; } }
+
+.btn {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 6px 16px;
+  cursor: pointer;
+  line-height: 1.5;
+}
+.btn:hover:not(:disabled) { border-color: var(--ink-2); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn.primary { background: var(--sea); border-color: var(--sea); color: var(--sea-ink); font-weight: 700; }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--sea); }
+.btn.quiet { border-color: transparent; background: none; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
+.btn.quiet:hover:not(:disabled) { border-color: transparent; color: var(--ink); }
+.btn.small { padding: 2px 8px; font-size: 0.85rem; }
+.btn.danger { color: var(--err); border-color: var(--err); }
+
+/* エディタ */
+.editor { font-size: 14px; }
+.editor .CodeMirror {
+  height: clamp(320px, 64vh, 660px);
+  font-family: var(--font-code);
+  line-height: 1.6;
+  background: var(--code-bg);
+  color: var(--ink);
+}
+.plain-editor {
+  display: block;
+  width: 100%;
+  height: clamp(320px, 64vh, 660px);
+  border: 0;
+  padding: 10px;
+  background: var(--code-bg);
+  font-family: var(--font-code);
+  line-height: 1.6;
+  resize: vertical;
+  tab-size: 4;
+}
+.cm-s-terrain .CodeMirror-gutters { background: var(--code-bg); border-right: 1px solid var(--line); }
+.cm-s-terrain .CodeMirror-linenumber { color: var(--ink-2); opacity: 0.75; }
+.cm-s-terrain .CodeMirror-cursor { border-left: 2px solid var(--ink); }
+.cm-s-terrain .CodeMirror-selected { background: var(--sea-soft); }
+.cm-s-terrain.CodeMirror-focused .CodeMirror-selected { background: var(--sea-soft); }
+.cm-s-terrain .CodeMirror-matchingbracket { color: inherit !important; outline: 1px solid var(--ink-2); }
+.cm-s-terrain .cm-keyword { color: var(--sea); font-weight: 700; }
+.cm-s-terrain .cm-def { color: var(--ink); font-weight: 700; }
+.cm-s-terrain .cm-builtin { color: var(--sea); }
+.cm-s-terrain .cm-string { color: var(--ok); }
+.cm-s-terrain .cm-number { color: var(--contour); }
+.cm-s-terrain .cm-comment { color: var(--ink-2); }
+.cm-s-terrain .cm-operator { color: var(--ink); }
+.cm-s-terrain .cm-variable, .cm-s-terrain .cm-variable-2, .cm-s-terrain .cm-property { color: var(--ink); }
+.cm-s-terrain .error-line { background: var(--err-soft); }
+
+.errorbox {
+  border-top: 2px solid var(--err);
+  background: var(--err-soft);
+  padding: 12px 14px;
+}
+.error-title { font-weight: 700; color: var(--err); overflow-wrap: anywhere; }
+.error-where { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.error-where code { background: var(--surface); border-radius: 3px; padding: 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.error-trace { font-size: 0.9rem; color: var(--ink-2); }
+.error-hint { margin-top: 6px; }
+
+.console { border-top: 1px solid var(--line); padding: 10px 14px 12px; }
+.console h2 { font-size: 0.85rem; color: var(--ink-2); font-weight: 400; }
+.console pre {
+  margin: 4px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--font-code);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 結果 */
+.out-panel { padding: 14px; display: flex; flex-direction: column; gap: 18px; }
+.out-empty { color: var(--ink-2); padding: 28px 8px; text-align: center; }
+.out-empty[hidden], .out-block[hidden], .sliders[hidden], .run-stats[hidden], .note[hidden] { display: none; }
+.out-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.out-head h2 { font-size: 1rem; }
+.note { font-size: 0.88rem; color: var(--ink-2); margin-top: 8px; }
+.run-stats { font-size: 0.82rem; color: var(--ink-2); border-top: 1px solid var(--line); padding-top: 10px; }
+
+.sliders { display: grid; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.slider-row {
+  display: grid;
+  grid-template-columns: minmax(0, 13em) minmax(0, 1fr) 3.2em;
+  gap: 10px;
+  align-items: center;
+}
+.slider-row label { font-size: 0.9rem; line-height: 1.4; }
+.slider-row input[type="range"] { width: 100%; accent-color: var(--sea); min-height: 28px; }
+.slider-row output { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+@media (max-width: 520px) {
+  .slider-row { grid-template-columns: minmax(0, 1fr) 3.2em; }
+  .slider-row label { grid-column: 1 / -1; margin-bottom: -6px; }
+}
+
+/* グラフ */
+.plot-caption { font-size: 0.9rem; color: var(--ink-2); }
+.plot-legend { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 16px; font-size: 0.85rem; color: var(--ink-2); }
+.plot-legend li { display: flex; align-items: center; gap: 6px; }
+.plot-legend[hidden], .plot-caption[hidden] { display: none; }
+.swatch { display: inline-block; width: 16px; height: var(--w, 3px); border-radius: 2px; background: var(--c); flex: none; }
+.swatch.dot { width: 9px; height: 9px; border-radius: 50%; }
+.plot-frame { position: relative; }
+.plot-canvas { display: block; width: 100%; touch-action: pan-y; cursor: crosshair; }
+.plot-tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.16);
+  max-width: 260px;
+  white-space: nowrap;
+}
+.plot-tip[hidden] { display: none; }
+.tip-x { color: var(--ink-2); }
+.tip-row { display: flex; align-items: center; gap: 6px; }
+.tip-label { overflow: hidden; text-overflow: ellipsis; max-width: 150px; color: var(--ink-2); }
+.tip-row b { margin-left: auto; padding-left: 8px; font-variant-numeric: tabular-nums; }
+
+/* 地図 */
+.maps { display: grid; gap: 14px; grid-template-columns: minmax(0, 420px); }
+.maps.many { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.map-figure figcaption { font-size: 0.85rem; color: var(--ink-2); line-height: 1.4; margin-bottom: 4px; }
+.map-canvas {
+  display: block;
+  width: 100%;
+  image-rendering: pixelated;
+  border: 1px solid var(--line);
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+.map-scale { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.map-ramp { flex: 1; height: 8px; border: 1px solid var(--line); background: linear-gradient(to right, #000, #fff); }
+.map-readout { font-size: 0.8rem; color: var(--ink-2); font-variant-numeric: tabular-nums; min-height: 1.8em; }
+
+/* 3D */
+.terrain {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  max-height: 70vh;
+  width: 100%;
+  background: var(--sky);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.terrain[hidden] { display: none; }
+.terrain canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.terrain canvas:active { cursor: grabbing; }
+.terrain-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 6px; }
+.check { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-2); cursor: pointer; margin-right: auto; }
+.check input { accent-color: var(--sea); width: 16px; height: 16px; }
+
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.segmented button { border: 0; background: var(--surface); padding: 2px 12px; font-size: 0.85rem; cursor: pointer; }
+.segmented button + button { border-left: 1px solid var(--line); }
+.segmented button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.segmented button:focus-visible { outline-offset: -3px; }
+
+.pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 28px; }
+
+/* ---------- 計測・記録のページ ---------- */
+.prose-page { padding-top: 28px; }
+.prose-page h1 { font-family: var(--font-title); font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.35; margin-bottom: 10px; }
+.prose-page h2 { font-size: 1.1rem; margin: 30px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.prose-page > p { max-width: 46em; }
+.prose-page > p + p { margin-top: 0.6em; }
+
+.kv, .data { border-collapse: collapse; background: var(--surface); font-size: 0.92rem; }
+.kv { width: 100%; max-width: 860px; border: 1px solid var(--line); }
+.kv th, .kv td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.5; }
+.kv th { width: 44%; font-weight: 400; color: var(--ink-2); }
+.kv td { overflow-wrap: anywhere; }
+.kv tr:last-child th, .kv tr:last-child td { border-bottom: 0; }
+
+.table-scroll { overflow-x: auto; margin-top: 12px; }
+.data { border: 1px solid var(--line); min-width: 100%; }
+.data th, .data td { padding: 6px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; line-height: 1.5; }
+.data thead th { text-align: right; font-weight: 400; color: var(--ink-2); font-size: 0.85rem; border-bottom: 1px solid var(--ink-2); }
+.data thead th:first-child, .data tbody th { text-align: left; }
+.data tbody th { font-weight: 700; }
+.data td { text-align: right; font-variant-numeric: tabular-nums; }
+.data tbody tr:last-child th, .data tbody tr:last-child td { border-bottom: 0; }
+
+.bench-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.bench-controls select { margin-left: 6px; padding: 4px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; }
+.bench-status { color: var(--ink-2); flex-basis: 100%; min-height: 1.8em; }
+.bench-preview { max-width: 420px; margin-top: 8px; }
+.exports { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+.footer {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 16px 20px 32px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  justify-content: space-between;
+}
+
+@media (max-width: 640px) {
+  .topbar { padding: 8px 16px; }
+  .tabpage { padding: 0 16px 40px; }
+  .footer { padding: 16px; }
+  .py-status { flex-basis: 100%; margin-left: 0; }
+  .trail { height: 88px; }
+  .trail-step { width: 26px; height: 26px; margin: -13px 0 0 -13px; font-size: 0.78rem; }
+  .out-panel { padding: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .py-status::before { animation: none !important; }
+}

@@ -5,5 +5,5 @@ desktop.ini
 # VS Code の個人設定
 .vscode/
 
-# 配布用 zip はリポジトリに入れない
-*.zip
+# 配布用 zip はリポジトリに入れない（いちばん上の階層だけ。vendor の中の zip は必要なので対象外）
+/*.zip
