@@ -223,6 +223,14 @@ a { color: var(--sea); }
   margin-bottom: 28px;
 }
 .lesson-intro { max-width: 40em; }
+.lesson-main { min-width: 0; }
+.lesson-table { margin-top: 14px; max-width: 40em; }
+/* せまい画面では、表を押しつぶさずに横へスクロールさせる */
+.data.compare { min-width: max(100%, 29em); }
+/* 比べる表: 文章が入るので左寄せにする */
+.data.compare th, .data.compare td { text-align: left; white-space: normal; }
+.data.compare thead th { text-align: left; }
+.data.compare tbody th { white-space: nowrap; }
 .lesson-intro p + p { margin-top: 0.8em; }
 .lesson-intro b { color: var(--contour); }
 
@@ -630,7 +638,7 @@ body.dragging-block * { cursor: grabbing !important; }
   font-size: 0.8rem;
   line-height: 1.5;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.16);
-  max-width: 260px;
+  max-width: 340px;
   white-space: nowrap;
 }
 .plot-tip[hidden] { display: none; }

@@ -1,12 +1,12 @@
-# ステップ 8: 自由制作（自分だけの島を作る）
+# ステップ 10: ブロックの世界（低い所は水、高い所は雪）
 import math
 import random
 
-seed = slider("シード値", 0, 99, 21)
-size = slider("地形の大きさ", 16, 64, 64, 16)
-height = slider("山の高さ", 4, 80, 40)
+seed = slider("シード値", 0, 99, 7)
+size = slider("地形の大きさ", 16, 64, 48, 16)
+height = slider("山の高さ", 2, 40, 16)
 scale = slider("地形の細かさ", 1, 8, 3)
-sea = slider("海面の高さ", 0, 20, 5)
+sea = slider("海面の高さ", 0, 20, 8)
 
 OCTAVES = 4
 PERSISTENCE = 0.5
@@ -25,7 +25,7 @@ def fade(t):
 
 
 def perlin1(x):
-    """1 次元パーリンノイズ（ステップ 3 と同じ）。位置 x の高さを返す"""
+    """1 次元パーリンノイズ（ステップ 4 と同じ）。位置 x の高さを返す"""
     i = math.floor(x)
     t = x - i
     left = slopes[i % 256] * t
@@ -34,7 +34,7 @@ def perlin1(x):
 
 
 def fbm1(x):
-    """オクターブ合成したノイズ（ステップ 5 と同じ）。位置 x の高さを返す"""
+    """オクターブ合成したノイズ（ステップ 7 と同じ）。位置 x の高さを返す"""
     total = 0.0
     freq = 1.0
     amp = 1.0
@@ -55,27 +55,17 @@ def ground(x, z):
     return total / math.sqrt(DIRECTIONS)                  # 本数が増えても、高低差が同じくらいになるようにする
 
 
-def island_mask(i, j):
-    """島の形を作る。中心で 1、端に近づくほど 0 になる数を返す"""
-    dx = (i - size / 2) / (size / 2)    # 中心からの横のずれ (-1〜1)
-    dz = (j - size / 2) / (size / 2)    # 中心からの奥行きのずれ (-1〜1)
-    d = math.sqrt(dx * dx + dz * dz)    # 中心からの距離
-    return max(0.0, 1 - d * d)
-
-
 def top_block(h):
     """高さ h の場所の、いちばん上のブロックの種類を決める（上から順に調べる）"""
     if h < sea:
-        return "water"
+        return "water"      # 海面より低い所は水
     if h <= sea + 1:
-        return "sand"
+        return "sand"       # 水ぎわは砂
     if h <= sea + 7:
-        return "grass"
-    if h <= sea + 13:
-        return "forest"
-    if h <= sea + 20:
-        return "stone"
-    return "snow"
+        return "grass"      # その上は草
+    if h <= sea + 11:
+        return "stone"      # 高い所は岩
+    return "snow"           # どれにも当てはまらない、いちばん高い所は雪
 
 
 heights = []
@@ -86,12 +76,10 @@ for j in range(size):
     for i in range(size):
         x = i / size * scale
         z = j / size * scale
-        n = ground(x, z)                # ノイズ（だいたい -1 〜 1）
-        e = (n + 1) / 2                 # だいたい 0 〜 1 に直す
-        h = round(height * e * island_mask(i, j))
+        h = round(10 + height * ground(x, z))
         block = top_block(h)
         if block == "water":
-            h = sea                     # 水は、海面の高さまで満たす
+            h = sea                         # 水は、海面の高さまで満たす
         height_row.append(h)
         block_row.append(block)
     heights.append(height_row)

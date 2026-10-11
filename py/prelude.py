@@ -133,7 +133,7 @@ def _to_grid(grid, who):
     return w, h, buf
 
 
-def terrain(heights, blocks=None, sea=None, colors=None):
+def terrain(heights, blocks=None, sea=None, colors=None, label=""):
     """行ごとの高さのリストから、ブロックを積んだ 3D の地形を描く。高さの単位は「ブロック何個分」。
 
     blocks: 高さと同じ形のリスト。マスごとに、いちばん上のブロックの種類を
@@ -173,7 +173,7 @@ def terrain(heights, blocks=None, sea=None, colors=None):
                     k = index[name] = len(palette)
                     palette.append(name)
                 cbuf.append(k)
-    meta = {"w": w, "h": h, "sea": sea, "palette": palette}
+    meta = {"w": w, "h": h, "sea": sea, "palette": palette, "label": str(label)}
     _emit("terrain", json.dumps(meta, ensure_ascii=False), buf, cbuf)
 
 

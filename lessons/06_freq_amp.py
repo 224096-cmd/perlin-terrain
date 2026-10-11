@@ -1,4 +1,4 @@
-# ステップ 4: 周波数と振幅
+# ステップ 6: 周波数と振幅
 import math
 import random
 

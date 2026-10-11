@@ -12,6 +12,34 @@ const HEIGHT_STOPS = [
   [0.0, '#3c7a45'], [0.4, '#6fa650'], [0.62, '#a39160'], [0.8, '#8b8f92'], [0.93, '#f3f6f8'], [1.0, '#f3f6f8'],
 ];
 const MAX_CUBES = 300000;
+const MAX_PARTS = 4;          // 横に並べて表示できる地形の数
+
+// 地形の上に出す名前の札（文字を描いた画像を、いつもカメラのほうを向く板に貼る）
+function labelSprite(text) {
+  const font = 'bold 44px system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif';
+  const canvas = document.createElement('canvas');
+  let g = canvas.getContext('2d');
+  g.font = font;
+  const padX = 26;
+  canvas.width = Math.ceil(g.measureText(text).width) + padX * 2;
+  canvas.height = 76;
+  g = canvas.getContext('2d');
+  g.fillStyle = 'rgba(22, 32, 39, 0.82)';
+  g.beginPath();
+  g.roundRect(0, 0, canvas.width, canvas.height, 12);
+  g.fill();
+  g.font = font;
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, canvas.width / 2, canvas.height / 2 + 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sprite.renderOrder = 3;
+  sprite.userData.aspect = canvas.width / canvas.height;
+  return sprite;
+}
 
 // 場所から決まる 0〜1 の数（ブロックごとの明るさを少しずつ変えるのに使う）
 function hash01(i, j) {
@@ -72,6 +100,9 @@ export class TerrainView {
   constructor(host) {
     this.host = host;
     this.data = null;
+    this.parts = [];          // 表示中の地形（terrain() を呼んだ回数ぶん。横に並べる）
+    this.target = null;       // いまブロックを置いている先
+    this.extent = null;       // 全体の大きさ（視点を決めるのに使う）
     this.notice = '';
     this._raf = 0;
     this._autoRotate = false;
@@ -143,11 +174,15 @@ export class TerrainView {
   }
 
   // d: { w, h, data: Float32Array, sea: number|null, palette: string[], colors: Uint8Array|null }
+  // 配列で渡すと、その順に左から横に並べて表示する
   setData(d) {
-    const dimsChanged = !this.data || this.data.w !== d.w || this.data.h !== d.h;
-    this.data = d;
-    this._prepare();
+    const all = Array.isArray(d) ? d : [d];
+    const parts = all.slice(-MAX_PARTS);
+    const key = (list) => list.map((p) => `${p.w}x${p.h}`).join(',');
+    const dimsChanged = key(parts) !== key(this.parts);
+    this.parts = parts;
     this._rebuild();
+    if (all.length > MAX_PARTS) this.notice = `terrain() が ${all.length} 回呼ばれました。最後の ${MAX_PARTS} つを表示しています。 ${this.notice}`.trim();
     if (dimsChanged) this.resetCamera();
     this.requestRender();
   }
@@ -208,19 +243,59 @@ export class TerrainView {
     // 種類ごとの材質は使い回すので、ここでは捨てない
     const shared = blockMaterials ? new Set(Object.values(blockMaterials).flat()) : new Set();
     const geos = new Set();
-    for (const obj of [...this.group.children]) {
-      this.group.remove(obj);
-      if (obj.geometry) geos.add(obj.geometry);
-      for (const mat of [].concat(obj.material || [])) if (!shared.has(mat)) mat.dispose();
-    }
+    this.group.traverse((obj) => {
+      if (obj.geometry && !obj.isSprite) geos.add(obj.geometry);
+      for (const mat of [].concat(obj.material || [])) {
+        if (shared.has(mat)) continue;
+        if (obj.isSprite) mat.map?.dispose();
+        mat.dispose();
+      }
+    });
+    this.group.clear();
     for (const g of geos) g.dispose();
   }
 
   _rebuild() {
     this._clear();
     this.notice = '';
-    const bottom = this._buildBlocks();
-    this._buildWater(bottom);
+    // まず全部の地形の高さを調べて、底の高さと全体の大きさをそろえる
+    const prepared = this.parts.map((part) => {
+      this.data = part;
+      this._prepare();
+      return { data: part, heights: this.heights, min: this.min, max: this.max, sea: this.sea,
+        cellRGB: this.cellRGB, paletteNames: this.paletteNames, cellNames: this.cellNames };
+    });
+    const depth = Math.max(...prepared.map((p) => p.data.h));
+    const gap = prepared.length > 1 ? Math.max(3, Math.round(Math.max(...prepared.map((p) => p.data.w)) * 0.2)) : 0;
+    const width = prepared.reduce((sum, p) => sum + p.data.w, 0) + gap * (prepared.length - 1);
+    const lowest = Math.min(...prepared.map((p) => Math.round(p.min)));
+    const top = Math.max(...prepared.map((p) => Math.max(p.max, p.sea ?? -Infinity)));
+    const size = Math.max(width, depth);
+    this.extent = { width, depth, min: lowest, max: top, size };
+    const labelY = Math.min(top, size * 2);
+    const stats = { triangles: 0, cubes: 0 };
+    // 名前の札は、いちばん長い名前がその地形の幅に収まる大きさにして、全部同じ大きさでそろえる
+    const sprites = prepared.map((p) => (p.data.label ? labelSprite(p.data.label) : null));
+    const tall = Math.min(size * 0.05, ...prepared.map((p, k) => (sprites[k] ? (p.data.w * 0.98) / sprites[k].userData.aspect : Infinity)));
+    let x = -width / 2;
+    for (const [k, p] of prepared.entries()) {
+      Object.assign(this, p);
+      this.target = new THREE.Group();
+      this.target.position.x = x + p.data.w / 2;
+      this.group.add(this.target);
+      const bottom = this._buildBlocks(lowest - 1);
+      this._buildWater(bottom);
+      stats.triangles += this.stats.triangles;
+      stats.cubes += this.stats.cubes;
+      const sprite = sprites[k];
+      if (sprite) {
+        sprite.scale.set(tall * sprite.userData.aspect, tall, 1);
+        sprite.position.set(0, labelY + depth * 0.42 + tall, 0);      // 斜め上から見たとき、地形の奥のふちの上あたりに見える高さ
+        this.target.add(sprite);
+      }
+      x += p.data.w + gap;
+    }
+    this.stats = stats;
   }
 
   // マスごとの「いちばん上のブロックの種類」を決める
@@ -248,16 +323,12 @@ export class TerrainView {
     return types;
   }
 
-  _buildBlocks() {
+  _buildBlocks(base) {
     const { w, h } = this.data;
     const n = w * h;
     const H = new Int32Array(n);
-    let lowest = Infinity;
-    for (let i = 0; i < n; i++) {
-      H[i] = Math.round(this.heights[i]);
-      if (H[i] < lowest) lowest = H[i];
-    }
-    const base = lowest - 1;        // いちばん低い柱でも 1 個はブロックが見えるようにする
+    // base: 底の高さ。いちばん低い柱でも 1 個はブロックが見えるように、最小の高さより 1 つ下にしてある
+    for (let i = 0; i < n; i++) H[i] = Math.round(this.heights[i]);
     const tops = this._topTypes();
 
     // 外から見える範囲（となりより高い部分）だけにブロックを置く
@@ -280,6 +351,7 @@ export class TerrainView {
     if (!stacked) {
       // 高低差が大きすぎるときは、1 マスを 1 本の柱（色を付けた無地）で表す
       this.notice = '高低差が大きいので、1 マスを 1 本の柱として表示しています。';
+      const target = this.target;
       const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), materials.plain, n);
       const m = mesh.instanceMatrix.array;
       const col = new Float32Array(n * 3);
@@ -294,7 +366,7 @@ export class TerrainView {
       }
       mesh.instanceColor = new THREE.InstancedBufferAttribute(col, 3);
       mesh.frustumCulled = false;
-      this.group.add(mesh);
+      target.add(mesh);
       this.stats = { triangles: n * 12, cubes: n };
       return base;
     }
@@ -314,7 +386,7 @@ export class TerrainView {
       const mesh = new THREE.InstancedMesh(geo, materials[type], c);
       mesh.frustumCulled = false;
       batches[type] = { mesh, m: mesh.instanceMatrix.array, col: new Float32Array(c * 3), p: 0 };
-      this.group.add(mesh);
+      this.target.add(mesh);
     }
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
@@ -358,24 +430,25 @@ export class TerrainView {
     const water = new THREE.Mesh(geo, mat);
     water.position.set(0, bottom + (top - bottom) / 2, 0);
     water.renderOrder = 1;
-    this.group.add(water);
+    this.target.add(water);
   }
 
   // 地形全体が画面の中央に収まるように、視点を決め直す
   resetCamera() {
-    if (!this.data) return;
-    const { w, h } = this.data;
-    const size = Math.max(w, h);
-    const lo = Math.max(this.min - 1, -size * 2);
-    const hi = Math.min(Math.max(this.max, this.sea ?? -Infinity), size * 2);
+    if (!this.extent) return;
+    const { width: w, depth: h, size } = this.extent;
+    const several = this.parts.length > 1;
+    const lo = Math.max(this.extent.min - 1, -size * 2);
+    const hi = Math.min(this.extent.max, size * 2);
     const tall = Math.max(1, hi - lo);
     // 地形を囲む箱がちょうど入る距離を求める（縦・横のうち、せまいほうの画角に合わせる）
     const radius = 0.5 * Math.sqrt(w * w + h * h + tall * tall);
     const vfov = (this.camera.fov * Math.PI) / 180;
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
-    const dist = (radius / Math.sin(Math.min(vfov, hfov) / 2)) * 0.9;
-    const dir = new THREE.Vector3(0.6, 0.62, 0.8).normalize();     // 右手前の斜め上から見下ろす
-    this.controls.target.set(0, lo + tall * 0.42, 0);
+    const dist = (radius / Math.sin(Math.min(vfov, hfov) / 2)) * (several ? 0.8 : 0.9);
+    // 1 つのときは右手前の斜め上から、並べたときはほぼ正面の斜め上から見下ろす
+    const dir = (several ? new THREE.Vector3(0, 0.85, 1) : new THREE.Vector3(0.6, 0.62, 0.8)).normalize();
+    this.controls.target.set(0, lo + tall * (several ? 0.9 : 0.42), 0);    // 並べたときは、上に出る名前の札も入るように少し上を見る
     this.camera.position.copy(this.controls.target).addScaledVector(dir, dist);
     this.camera.near = Math.max(0.1, size / 200);
     this.camera.far = size * 40;

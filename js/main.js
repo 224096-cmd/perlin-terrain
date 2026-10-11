@@ -21,7 +21,7 @@ const store = {
   remove(key) { try { localStorage.removeItem(key); } catch { /* 同上 */ } },
   json(key, fallback) { try { return JSON.parse(this.get(key)) ?? fallback; } catch { return fallback; } },
 };
-const CODE_KEY = 'perlinTerrain.code4.';      // 書き換えたコードの保存先（ステップごと）
+const CODE_KEY = 'perlinTerrain.code5.';      // 書き換えたコードの保存先（ステップごと）
 
 $('version').textContent = 'v' + APP_VERSION;
 
@@ -289,6 +289,12 @@ async function openLesson(index, byUser = false) {
   $('lessonStep').textContent = `ステップ ${lessonIndex + 1} / ${LESSONS.length}`;
   $('lessonTitle').textContent = lesson.title;
   $('lessonIntro').replaceChildren(...lesson.intro.map((html) => el('p', { html })));
+  const table = $('lessonTable');
+  table.hidden = !lesson.table;
+  table.replaceChildren(...(lesson.table ? [el('table', { class: 'data compare' }, [
+    el('thead', {}, el('tr', {}, lesson.table.head.map((h) => el('th', { scope: 'col', text: h })))),
+    el('tbody', {}, lesson.table.rows.map((r) => el('tr', {}, r.map((c, k) => el(k === 0 ? 'th' : 'td', k === 0 ? { scope: 'row', text: c } : { text: c }))))),
+  ])] : []));
   const fig = $('lessonFigure');
   fig.hidden = !lesson.figure;
   fig.innerHTML = lesson.figure ? FIGURES[lesson.figure]() : '';
@@ -312,6 +318,9 @@ async function openLesson(index, byUser = false) {
   $('sliders').replaceChildren();
   $('sliders').hidden = true;
   plotView.clearGhost();
+  applyPlotPrefs(plotPrefs(lesson));
+  $('ghostToggle').checked = lesson.ghost !== false;     // 見比べるステップでは、最初は「ひとつ前の結果」を出さない
+  plotView.setGhostVisible($('ghostToggle').checked);
   showOutputs([]);
   showError(null);
   showConsole([]);
@@ -555,7 +564,8 @@ function showStats(res, renderMs) {
 
 async function showOutputs(outputs, newBurst = true) {
   const plots = outputs.filter((o) => o.kind === 'plot');
-  const terrain = outputs.filter((o) => o.kind === 'terrain').pop() || null;
+  const terrains = outputs.filter((o) => o.kind === 'terrain');
+  const terrain = terrains.length ? terrains : null;
 
   // コードの中で呼ばれた順に並べる
   const order = [...new Set(outputs.map((o) => o.kind))];
@@ -566,6 +576,7 @@ async function showOutputs(outputs, newBurst = true) {
   $('terrainBlock').hidden = !terrain;
 
   if (plots.length) {
+    $('plotLayoutGroup').hidden = plots.filter((o) => !o.dots).length < 2;     // 線が 1 本だけなら、並べ方は選べない
     plotView.update(plots, { keepGhost: !newBurst });
     const note = $('plotNote');
     note.hidden = !plotView.badValues;
@@ -598,19 +609,37 @@ $('autoRotate').addEventListener('change', (ev) => terrainView?.setAutoRotate(ev
 $('resetView').addEventListener('click', () => terrainView?.resetCamera());
 $('ghostToggle').addEventListener('change', (ev) => plotView.setGhostVisible(ev.target.checked));
 
-// グラフの見た目（線 / ブロックを積んだ断面）。選んだほうを覚えておく
-function setPlotStyle(style, byUser) {
-  $('plotLine').setAttribute('aria-pressed', String(style === 'line'));
-  $('plotBlocks').setAttribute('aria-pressed', String(style === 'blocks'));
-  plotView.setStyle(style);
-  if (byUser) {
-    store.set('perlinTerrain.plotStyle', style);
-    logger.add('plot_style', LESSONS[lessonIndex].id, { detail: style });
-  }
+// グラフの見た目（線 / ブロック）と並べ方（重ねる / 並べる）。
+// ステップごとに最初の表示が決まっていて、切り替えた場合はそのステップについて覚えておく。
+function plotPrefs(lesson) {
+  const saved = store.json('perlinTerrain.plotView', {})[lesson.id] || {};
+  return {
+    style: saved.style || lesson.plotStyle || 'line',
+    layout: saved.layout || lesson.plotLayout || 'overlay',
+  };
 }
-$('plotLine').addEventListener('click', () => setPlotStyle('line', true));
-$('plotBlocks').addEventListener('click', () => setPlotStyle('blocks', true));
-setPlotStyle(store.get('perlinTerrain.plotStyle', 'line') === 'blocks' ? 'blocks' : 'line', false);
+
+function applyPlotPrefs(prefs) {
+  $('plotLine').setAttribute('aria-pressed', String(prefs.style === 'line'));
+  $('plotBlocks').setAttribute('aria-pressed', String(prefs.style === 'blocks'));
+  $('plotOverlay').setAttribute('aria-pressed', String(prefs.layout === 'overlay'));
+  $('plotRows').setAttribute('aria-pressed', String(prefs.layout === 'rows'));
+  plotView.setStyle(prefs.style);
+  plotView.setLayout(prefs.layout);
+}
+
+function choosePlot(key, value) {
+  const lesson = LESSONS[lessonIndex];
+  const all = store.json('perlinTerrain.plotView', {});
+  all[lesson.id] = { ...plotPrefs(lesson), [key]: value };
+  store.set('perlinTerrain.plotView', JSON.stringify(all));
+  applyPlotPrefs(all[lesson.id]);
+  logger.add('plot_style', lesson.id, { detail: `${key}=${value}` });
+}
+$('plotLine').addEventListener('click', () => choosePlot('style', 'line'));
+$('plotBlocks').addEventListener('click', () => choosePlot('style', 'blocks'));
+$('plotOverlay').addEventListener('click', () => choosePlot('layout', 'overlay'));
+$('plotRows').addEventListener('click', () => choosePlot('layout', 'rows'));
 
 const saveName = (kind) => `perlin-terrain-step${lessonIndex + 1}-${kind}-${stamp()}.png`;
 $('plotSave').addEventListener('click', () => plotView.toBlob((b) => b && downloadBlob(b, saveName('graph'))));

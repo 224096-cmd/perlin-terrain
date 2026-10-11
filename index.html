@@ -47,7 +47,10 @@
     </header>
 
     <div class="lesson-text">
-      <div class="lesson-intro" id="lessonIntro"></div>
+      <div class="lesson-main">
+        <div class="lesson-intro" id="lessonIntro"></div>
+        <div class="table-scroll lesson-table" id="lessonTable" hidden></div>
+      </div>
       <div class="lesson-aside">
         <figure class="lesson-figure" id="lessonFigure" hidden></figure>
         <dl class="lesson-terms" id="lessonTerms"></dl>
@@ -120,6 +123,10 @@
             <div class="segmented" role="group" aria-label="グラフの見た目">
               <button type="button" id="plotLine" aria-pressed="true">線</button>
               <button type="button" id="plotBlocks" aria-pressed="false">ブロック</button>
+            </div>
+            <div class="segmented" id="plotLayoutGroup" role="group" aria-label="グラフの並べ方">
+              <button type="button" id="plotOverlay" aria-pressed="true">重ねる</button>
+              <button type="button" id="plotRows" aria-pressed="false">並べる</button>
             </div>
             <label class="check"><input type="checkbox" id="ghostToggle" checked> ひとつ前の結果も表示</label>
             <button type="button" class="btn quiet small" id="plotSave">画像を保存</button>

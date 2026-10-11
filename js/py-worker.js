@@ -48,7 +48,7 @@ function emit(kind, metaJson, a, b) {
   if (kind === 'plot') {
     outputs.push({ kind, label: meta.label, dots: meta.dots, width: meta.width, ys: copyBuffer(a, 'f32'), xs: copyBuffer(b, 'f32') });
   } else if (kind === 'terrain') {
-    outputs.push({ kind, w: meta.w, h: meta.h, sea: meta.sea, palette: meta.palette, data: copyBuffer(a, 'f32'), colors: copyBuffer(b, 'u8') });
+    outputs.push({ kind, w: meta.w, h: meta.h, sea: meta.sea, palette: meta.palette, label: meta.label || '', data: copyBuffer(a, 'f32'), colors: copyBuffer(b, 'u8') });
   }
   emitMs += performance.now() - t;
 }
