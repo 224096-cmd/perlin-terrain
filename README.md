@@ -4,7 +4,7 @@ Pyodide を用いたブラウザ完結型プロシージャル地形生成学習
 
 公開ページ: https://224096-cmd.github.io/perlin-terrain/
 
-現在の版: v1.5.0
+現在の版: v1.5.1
 
 ## 概要
 

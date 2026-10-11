@@ -161,17 +161,21 @@ export function initBench({ runner, loadTerrain, onBusy }) {
           view = null;
         }
       }
+      // スライダーの値は { value, default } の形で渡す（default は py/bench.py の slider() に書いてある最初の値）
+      const paramsFor = (size) => ({ size: { value: size, default: 64 }, octaves: { value: OCTAVES, default: 4 } });
       // 1 回目は準備運動（結果には入れない）
-      await runner.run(benchCode, { size: 16, octaves: OCTAVES }, { timeoutMs: 120000 });
+      await runner.run(benchCode, paramsFor(16), { timeoutMs: 120000 });
       for (let k = 0; k < 20; k++) generateJS(32, OCTAVES);
 
       const startedAt = new Date().toISOString();
       for (const size of SIZES) {
         for (let trial = 1; trial <= repeats; trial++) {
           status.textContent = `計測中… ${size}×${size}（${trial} / ${repeats} 回目）`;
-          const res = await runner.run(benchCode, { size, octaves: OCTAVES }, { timeoutMs: 120000 });
+          const res = await runner.run(benchCode, paramsFor(size), { timeoutMs: 120000 });
           if (res.error) throw new Error(`${res.error.type}: ${res.error.message}`);
           const out = res.outputs.find((o) => o.kind === 'terrain');
+          // 頼んだ大きさの地形が本当に作られたかを確かめる（違っていたら、計測結果として使わない）
+          if (!out || out.w !== size || out.h !== size) throw new Error(`地形の大きさが ${size}×${size} になっていません（${out ? `${out.w}×${out.h}` : '出力なし'}）。`);
           // JavaScript は速すぎて 1 回では正確に測れないので、25 ms 以上になるまでくり返して 1 回あたりを求める
           let jsRuns = 0;
           const t0 = performance.now();
